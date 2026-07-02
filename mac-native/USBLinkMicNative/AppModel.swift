@@ -650,13 +650,27 @@ final class AppModel: ObservableObject {
         defaults.set(routes, forKey: "routes")
         defaults.set(selectedAdapter?.ip, forKey: "selectedAdapterIP")
         appendLog("设置已保存")
-        // 如果手机麦克风正在运行，重启它以应用新的输出设备/音频参数。
-        if hadRunningMic {
-            Task {
-                await stopMic()
-                await startMic()
-                appendLog("手机麦克风已重启以应用新设置")
-            }
+        // 如果手机麦克风正在运行，仅重新初始化 Mac 音频播放器以应用新的输出设备/音频参数，
+        // 不需要断开手机到 Mac 的网络连接。
+        if micState.isOn {
+            restartAudioPlayer()
+        }
+    }
+
+    /// 仅重新初始化 Mac 音频播放器，用于切换输出设备或音频参数时不中断手机到 Mac 的网络连接。
+    private func restartAudioPlayer() {
+        let deviceID = audioDevice == "系统默认输出" ? nil : systemOutputDeviceID(named: audioDevice)
+        do {
+            try audioPlayer.start(
+                sampleRate: Double(micSampleRate),
+                channelCount: micChannelCount,
+                outputDeviceID: deviceID
+            )
+            audioPlayer.gain = Float(micGain)
+            audioPlayer.isMuted = micMuted
+            appendLog("手机麦克风：Mac 音频输出已切换到 \(audioDevice)")
+        } catch {
+            appendLog("手机麦克风：Mac 音频输出切换失败：\(error.localizedDescription)")
         }
     }
 
