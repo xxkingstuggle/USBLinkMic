@@ -97,10 +97,11 @@ final class AppModel: ObservableObject {
     @Published var sidebarCollapsed = false
 
     // 限制 UI 刷新频率，避免高频率音频包触发大量 SwiftUI 重组。
-    private var pendingWaveformUpdate = false
+    // 这些属性由接收队列 + 波形队列访问，用 nonisolated(unsafe) 避免 MainActor 调度开销。
+    nonisolated(unsafe) private var pendingWaveformUpdate = false
     private var pendingLogLines: [String] = []
     private var logFlushTask: Task<Void, Never>?
-    private let waveformQueue = DispatchQueue(label: "USBLinkMic.WaveformUI")
+    nonisolated private let waveformQueue = DispatchQueue(label: "USBLinkMic.WaveformUI")
 
     let relayPort = 31416
     let relaySocket = "usblinkmic_net"
@@ -109,8 +110,8 @@ final class AppModel: ObservableObject {
     let micService = "io.github.teamclouday.androidMic.domain.service.ForegroundService"
     let networkActivity = "io.github.teamclouday.androidMic.network.LinkNetActivity"
     private let micReceiver = MicReceiver()
-    private let audioPlayer = AudioPlayer()
-    private let waveformData = WaveformData(capacity: 160)
+    nonisolated private let audioPlayer = AudioPlayer()
+    nonisolated private let waveformData = WaveformData(capacity: 160)
     private let defaults = UserDefaults.standard
     private var previousUsbFunctionBeforeNcm: String?
     private var phoneToMacOperationInProgress = false
@@ -187,9 +188,8 @@ final class AppModel: ObservableObject {
         appendLog("手机麦克风：开始启动 [\(micConnectionMode.label)]")
         do {
             try micReceiver.start(port: audioPort) { [weak self] event in
-                Task { @MainActor [weak self] in
-                    self?.handleMicReceiverEvent(event)
-                }
+                // 在 MicReceiver 队列直接处理，避免每包都切到 MainActor 再切回来。
+                self?.handleMicReceiverEvent(event)
             }
             appendLog("手机麦克风：Mac 接收端已监听 tcp:\(audioPort)")
         } catch {
@@ -591,25 +591,27 @@ final class AppModel: ObservableObject {
         return "：\(compact(detail))"
     }
 
-    private func handleMicReceiverEvent(_ event: MicReceiverEvent) {
+    nonisolated private func handleMicReceiverEvent(_ event: MicReceiverEvent) {
         switch event {
         case .status(let message):
-            if message.contains("音频包") {
-                hasRealAudioSamples = true
+            Task { @MainActor [weak self] in
+                if message.contains("音频包") {
+                    self?.hasRealAudioSamples = true
+                }
+                self?.appendLog("手机麦克风：\(message)")
             }
-            appendLog("手机麦克风：\(message)")
         case .packet(let packet):
-            hasRealAudioSamples = true
             let mono = audioPlayer.write(packet: packet)
             waveformData.append(samples: mono, sampleRate: Double(packet.sampleRate))
             scheduleWaveformUpdate()
         }
     }
 
-    private func scheduleWaveformUpdate() {
+    nonisolated private func scheduleWaveformUpdate() {
         guard !pendingWaveformUpdate else { return }
         pendingWaveformUpdate = true
-        waveformQueue.asyncAfter(deadline: .now() + .milliseconds(40)) { [weak self] in
+        // 降到 ~20 Hz，与 Rust 原项目的低刷新开销一致。
+        waveformQueue.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
             guard let self else { return }
             let samples = self.waveformData.read()
             Task { @MainActor [weak self] in

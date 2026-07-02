@@ -47,25 +47,28 @@ final class AudioPlayer: @unchecked Sendable {
             let frames = Int(frameCount)
             let ch = max(1, Int(self.channelCount))
 
-            // 预分配重用的读取缓冲区，避免实时渲染线程频繁堆分配。
-            let needed = frames * ch
-            if self.readBuffer.count < needed {
-                self.readBuffer = Array(repeating: Float(0), count: needed)
+            // 预分配重用的单声道缓冲区。Ring buffer 始终保存单声道 Float。
+            if self.readBuffer.count < frames {
+                self.readBuffer = Array(repeating: Float(0), count: frames)
             }
-            _ = self.ringBuffer?.read(into: &self.readBuffer, count: needed)
+            _ = self.ringBuffer?.read(into: &self.readBuffer, count: frames)
 
             let gain = self.gain
             let muted = self.isMuted
-            for i in 0..<needed {
+
+            // 一次遍历完成增益/静音/削波，避免后续逐样本循环。
+            for i in 0..<frames {
                 let s = muted ? 0 : self.readBuffer[i] * gain
-                self.readBuffer[i] = s < -1.0 ? -1.0 : (s > 1.0 ? 1.0 : s)
+                self.readBuffer[i] = max(-1.0, min(1.0, s))
             }
 
-            for chIndex in 0..<ch {
-                guard let mData = ablPointer[chIndex].mData else { continue }
-                let ptr = mData.bindMemory(to: Float.self, capacity: frames)
-                for frame in 0..<frames {
-                    ptr[frame] = self.readBuffer[frame * ch + chIndex]
+            // 将单声道样本复制到所有输出通道（memcpy 级别）。
+            self.readBuffer.withUnsafeBufferPointer { src in
+                guard let srcBase = src.baseAddress else { return }
+                for chIndex in 0..<ch {
+                    guard let mData = ablPointer[chIndex].mData else { continue }
+                    let ptr = mData.bindMemory(to: Float.self, capacity: frames)
+                    ptr.update(from: srcBase, count: frames)
                 }
             }
 

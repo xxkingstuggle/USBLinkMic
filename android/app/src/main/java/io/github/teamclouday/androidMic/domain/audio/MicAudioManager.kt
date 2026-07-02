@@ -88,7 +88,8 @@ class MicAudioManager(
         }
 
         val bytesPerSample = bytesPerSample(audioFormat)
-        val targetFrames = maxOf(1, sampleRate / 50)
+        // 40 ms packet target: balances latency and per-packet overhead (less IPC, fewer syscalls).
+        val targetFrames = maxOf(1, sampleRate / 25)
         readByteSize = minOf(bufferSize, maxOf(bytesPerSample * channelCount, targetFrames * channelCount * bytesPerSample))
         readFloatSize = minOf(bufferSize / 4, maxOf(channelCount, targetFrames * channelCount))
         buffer = ByteArray(readByteSize)
@@ -96,8 +97,8 @@ class MicAudioManager(
         bufferFloatConvert = ByteBuffer.allocate(readFloatSize * 4).order(ByteOrder.nativeOrder())
     }
 
-    // audio stream publisher
-    fun audioStream(onWaveLevels: ((FloatArray) -> Unit)? = null): Flow<AudioPacket> = channelFlow {
+    // audio stream publisher (no per-packet waveform computation; callers throttle UI updates themselves)
+    fun audioStream(): Flow<AudioPacket> = channelFlow {
         // launch in scope so infinite loop will be canceled when scope exits
         streamJob = scope.launch {
             while (true) {
@@ -142,15 +143,12 @@ class MicAudioManager(
                     continue
                 }
 
-                val waveLevels = buildWaveLevels(packetBuffer, audioFormat, channelCount)
-                onWaveLevels?.invoke(waveLevels)
                 send(
                     AudioPacket(
                         buffer = packetBuffer,
                         sampleRate = sampleRate,
                         audioFormat = audioFormat,
-                        channelCount = channelCount,
-                        waveLevels = waveLevels
+                        channelCount = channelCount
                     )
                 )
             }
@@ -199,7 +197,7 @@ class MicAudioManager(
         else -> 2
     }
 
-    private fun buildWaveLevels(data: ByteArray, format: Int, channels: Int): FloatArray {
+    internal fun buildWaveLevels(data: ByteArray, format: Int, channels: Int): FloatArray {
         if (data.isEmpty()) return FloatArray(0)
         val sampleBytes = bytesPerSample(format)
         val frameCount = data.size / sampleBytes / maxOf(1, channels)

@@ -31,6 +31,8 @@ import io.github.teamclouday.androidMic.utils.ignore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.launch
 
 
@@ -317,14 +319,26 @@ class ForegroundService : Service() {
         }
 
         try {
-            managerStream?.start(
-                managerAudio!!.audioStream { levels ->
-                    if (levels.isNotEmpty()) {
-                        replyUi(ResponseData(waveLevels = levels), replyTo)
+            // Share the audio flow so both the streamer and the UI waveform collector can subscribe
+            // without re-running the AudioRecord read loop or duplicating packet buffers.
+            val sharedFlow = managerAudio!!.audioStream().shareIn(scope, SharingStarted.Eagerly, replay = 0)
+
+            managerStream?.start(sharedFlow, serviceMessenger)
+
+            // Throttle waveform updates to ~5 Hz to reduce Binder IPC and UI recompositions.
+            scope.launch {
+                var packetCount = 0
+                sharedFlow.collect { packet ->
+                    packetCount++
+                    if (packetCount % 5 == 0) {
+                        val levels = managerAudio!!.buildWaveLevels(packet.buffer, packet.audioFormat, packet.channelCount)
+                        if (levels.isNotEmpty()) {
+                            replyUi(ResponseData(waveLevels = levels), replyTo)
+                        }
                     }
-                },
-                serviceMessenger
-            )
+                }
+            }
+
             states.isStreamStarted = true
             states.mode = msg.mode!!
             Log.d(TAG, "startStream [connected] ${managerStream?.getInfo()}")

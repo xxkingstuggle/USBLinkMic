@@ -105,9 +105,13 @@ class TcpStreamer(
                         .build()
                     val pack = message.toByteArray()
 
-                    socket!!.outputStream.write(pack.size.toBigEndianU32())
-                    socket!!.outputStream.write(pack)
-                    socket!!.outputStream.flush()
+                    // Combine length prefix and body into one buffer to halve the syscall count.
+                    // Avoid per-packet flush; the OS and TCP will push data promptly on a local ADB reverse pipe.
+                    val out = ByteArray(4 + pack.size)
+                    val prefix = pack.size.toBigEndianU32()
+                    prefix.copyInto(out, 0)
+                    pack.copyInto(out, 4)
+                    socket!!.outputStream.write(out)
                 } catch (e: IOException) {
                     Log.d(tag, "${e.message}")
                     delay(5)
