@@ -1,0 +1,33 @@
+.DS_Store
+
+# Local workspace/cache
+.workbuddy/
+*.log
+
+# Build outputs
+build/
+outputs/
+*.apk
+*.aab
+*.ipa
+*.app
+*.dmg
+*.zip
+
+# Android/Gradle
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+
+# macOS/Xcode
+mac-native/build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Signing material must stay local.
+*.jks
+*.keystore
+key.jks

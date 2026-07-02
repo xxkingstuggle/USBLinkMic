@@ -1,0 +1,351 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1A0000100000000000000001 /* USBLinkMicNativeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000001 /* USBLinkMicNativeApp.swift */; };
+		1A0000110000000000000001 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000020000000000000001 /* AppModel.swift */; };
+		1A0000120000000000000001 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000030000000000000001 /* MainView.swift */; };
+		1A0000130000000000000001 /* Shell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000040000000000000001 /* Shell.swift */; };
+		E0E23641D508E5D7B11EAE63 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6B2EB24124822B1AA71703F9 /* Assets.xcassets */; };
+		1A0003000000000000000001 /* AudioPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002000000000000000001 /* AudioPacket.swift */; };
+		1A0003010000000000000001 /* AudioFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002010000000000000001 /* AudioFormat.swift */; };
+		1A0003020000000000000001 /* SampleRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002020000000000000001 /* SampleRingBuffer.swift */; };
+		1A0003030000000000000001 /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002030000000000000001 /* AudioPlayer.swift */; };
+		1A0003040000000000000001 /* WaveformData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002040000000000000001 /* WaveformData.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1A0000010000000000000001 /* USBLinkMicNativeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBLinkMicNativeApp.swift; sourceTree = "<group>"; };
+		1A0000020000000000000001 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		1A0000030000000000000001 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		1A0000040000000000000001 /* Shell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shell.swift; sourceTree = "<group>"; };
+		1A0000200000000000000001 /* USB LinkMic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "USB LinkMic.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6B2EB24124822B1AA71703F9 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = USBLinkMicNative/Assets.xcassets; sourceTree = "<group>"; };
+		1A0002000000000000000001 /* AudioPacket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPacket.swift; sourceTree = "<group>"; };
+		1A0002010000000000000001 /* AudioFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFormat.swift; sourceTree = "<group>"; };
+		1A0002020000000000000001 /* SampleRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleRingBuffer.swift; sourceTree = "<group>"; };
+		1A0002030000000000000001 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
+		1A0002040000000000000001 /* WaveformData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformData.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1A0000300000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1A0000400000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				1A0000500000000000000001 /* USBLinkMicNative */,
+				1A0000600000000000000001 /* Products */,
+				6B2EB24124822B1AA71703F9 /* Assets.xcassets */,
+			);
+			sourceTree = "<group>";
+		};
+		1A0000500000000000000001 /* USBLinkMicNative */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000010000000000000001 /* USBLinkMicNativeApp.swift */,
+				1A0000020000000000000001 /* AppModel.swift */,
+				1A0000030000000000000001 /* MainView.swift */,
+				1A0000040000000000000001 /* Shell.swift */,
+				1A0002100000000000000001 /* Audio */,
+			);
+			path = USBLinkMicNative;
+			sourceTree = "<group>";
+		};
+		1A0002100000000000000001 /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				1A0002000000000000000001 /* AudioPacket.swift */,
+				1A0002010000000000000001 /* AudioFormat.swift */,
+				1A0002020000000000000001 /* SampleRingBuffer.swift */,
+				1A0002030000000000000001 /* AudioPlayer.swift */,
+				1A0002040000000000000001 /* WaveformData.swift */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+
+		1A0000600000000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000200000000000000001 /* USB LinkMic.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1A0000700000000000000001 /* USBLinkMicNative */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A0000800000000000000001 /* Build configuration list for PBXNativeTarget "USBLinkMicNative" */;
+			buildPhases = (
+				1A0000900000000000000001 /* Sources */,
+				1A0000300000000000000001 /* Frameworks */,
+				16AFB6512ABB39430441CDF5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = USBLinkMicNative;
+			productName = USBLinkMicNative;
+			productReference = 1A0000200000000000000001 /* USB LinkMic.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1A0000A00000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					1A0000700000000000000001 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+				};
+			};
+			buildConfigurationList = 1A0000B00000000000000001 /* Build configuration list for PBXProject "USBLinkMicNative" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = 1A0000400000000000000001;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 1A0000600000000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1A0000700000000000000001 /* USBLinkMicNative */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		16AFB6512ABB39430441CDF5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E0E23641D508E5D7B11EAE63 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1A0000900000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A0000100000000000000001 /* USBLinkMicNativeApp.swift in Sources */,
+				1A0000110000000000000001 /* AppModel.swift in Sources */,
+				1A0000120000000000000001 /* MainView.swift in Sources */,
+				1A0000130000000000000001 /* Shell.swift in Sources */,
+				1A0003000000000000000001 /* AudioPacket.swift in Sources */,
+				1A0003010000000000000001 /* AudioFormat.swift in Sources */,
+				1A0003020000000000000001 /* SampleRingBuffer.swift in Sources */,
+				1A0003030000000000000001 /* AudioPlayer.swift in Sources */,
+				1A0003040000000000000001 /* WaveformData.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1A0000C00000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		1A0000C10000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		1A0000D00000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "USB LinkMic";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				MARKETING_VERSION = 3.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zjx.usblinkmic;
+				PRODUCT_NAME = "USB LinkMic";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		1A0000D10000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "USB LinkMic";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				MARKETING_VERSION = 3.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zjx.usblinkmic;
+				PRODUCT_NAME = "USB LinkMic";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1A0000800000000000000001 /* Build configuration list for PBXNativeTarget "USBLinkMicNative" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A0000D00000000000000001 /* Debug */,
+				1A0000D10000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A0000B00000000000000001 /* Build configuration list for PBXProject "USBLinkMicNative" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A0000C00000000000000001 /* Debug */,
+				1A0000C10000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1A0000A00000000000000001 /* Project object */;
+}

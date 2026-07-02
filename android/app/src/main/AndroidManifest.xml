@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:name="io.github.teamclouday.androidMic.AndroidMicApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AndroidMic">
+
+        <activity
+            android:name="io.github.teamclouday.androidMic.ui.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.AndroidMic">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="io.github.teamclouday.androidMic.network.LinkNetActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Transparent">
+            <intent-filter>
+                <action android:name="com.zjx.usblinkmic.START_NETWORK" />
+                <action android:name="com.zjx.usblinkmic.STOP_NETWORK" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name="io.github.teamclouday.androidMic.domain.service.ForegroundService"
+            android:exported="true"
+            android:foregroundServiceType="microphone">
+            <intent-filter>
+                <action android:name="com.zjx.usblinkmic.START_MIC" />
+                <action android:name="com.zjx.usblinkmic.STOP_MIC" />
+                <action android:name="com.zjx.usblinkmic.START_ALL" />
+                <action android:name="com.zjx.usblinkmic.STOP_ALL" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="io.github.teamclouday.androidMic.network.LinkNetService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="usb_reverse_tethering_vpn" />
+        </service>
+
+    </application>
+
+</manifest>
