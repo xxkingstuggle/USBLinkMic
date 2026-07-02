@@ -49,7 +49,7 @@ class MessageUi(private val ctx: ForegroundService) {
             .setOngoing(true)
             .addAction(
                 NotificationCompat.Action(
-                    R.drawable.ic_launcher_foreground,
+                    R.drawable.ic_notification,
                     ctx.getString(R.string.stop_streaming),
                     pStopStreamingIntent
                 )

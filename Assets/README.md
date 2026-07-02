@@ -1,5 +1,7 @@
 # Assets
 
+`usblinkmic_icon_source.png` is the canonical app icon source. Use it to regenerate both the macOS AppIcon asset and Android launcher icons so every future build uses the same icon.
+
 [microphone-3404243_640.png](https://pixabay.com/vectors/microphone-icon-logo-design-mic-3404243/)
 
 Android [icons](https://www.figma.com/design/cHNR5SvtwJSXHXykmeOzvV/AndroidMic?m=auto&t=bNjzLobpUeLCUCHZ-1) was remade with Figma!
