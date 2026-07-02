@@ -1,3 +1,4 @@
+---
 name: 功能请求 / Feature Request
 about: 为 USB LinkMic 提出新功能建议
 title: '[FEATURE] '

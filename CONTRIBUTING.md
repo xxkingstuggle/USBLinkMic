@@ -1,99 +1,91 @@
 # Contributing to USB LinkMic
 
-感谢你对 USB LinkMic 的兴趣！
+Thank you for helping improve USB LinkMic.
 
-## 如何贡献
+## Workflow
 
-1. Fork 本仓库。
-2. 基于 `main` 分支创建你的功能分支：`git checkout -b feature/your-feature`。
-3. 提交改动：`git commit -m "feat: describe your change"`。
-4. 推送到你的 Fork：`git push origin feature/your-feature`。
-5. 提交 Pull Request。
+1. Fork the repository.
+2. Create a branch from `main`.
+3. Keep changes focused and include a short explanation in the commit message.
+4. Build the affected app before opening a pull request.
+5. Open a pull request with screenshots or logs when UI/audio behavior changes.
 
-## 提交信息规范
+## Commit Style
 
-- `feat:` 新功能
-- `fix:` 修复 bug
-- `perf:` 性能优化
-- `refactor:` 重构
-- `docs:` 文档
-- `cleanup:` 清理或删除
-
-## 构建与测试
-
-### macOS
-
-```sh
-xcodebuild \
-  -project mac-native/USBLinkMicNative.xcodeproj \
-  -scheme USBLinkMicNative \
-  -configuration Release \
-  -derivedDataPath mac-native/build \
-  CODE_SIGN_IDENTITY="-" \
-  CODE_SIGNING_REQUIRED=NO \
-  build
-```
-
-### Android
-
-```sh
-cd android
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
-./gradlew :app:assembleDebug
-```
-
-## 行为准则
-
-保持友善、尊重他人，专注于改进项目本身。
-
----
-
-# Contributing to USB LinkMic
-
-Thank you for your interest in USB LinkMic!
-
-## How to Contribute
-
-1. Fork this repository.
-2. Create a feature branch from `main`: `git checkout -b feature/your-feature`.
-3. Commit your changes: `git commit -m "feat: describe your change"`.
-4. Push to your fork: `git push origin feature/your-feature`.
-5. Open a Pull Request.
-
-## Commit Message Convention
-
-- `feat:` new feature
+- `feat:` new user-facing behavior
 - `fix:` bug fix
 - `perf:` performance improvement
-- `refactor:` code refactoring
-- `docs:` documentation
-- `cleanup:` removal or cleanup
+- `refactor:` internal code change
+- `docs:` documentation-only change
+- `chore:` maintenance
 
-## Build and Test
+## Local Checks
 
-### macOS
+macOS:
 
 ```sh
 xcodebuild \
   -project mac-native/USBLinkMicNative.xcodeproj \
   -scheme USBLinkMicNative \
   -configuration Release \
-  -derivedDataPath mac-native/build \
-  CODE_SIGN_IDENTITY="-" \
-  CODE_SIGNING_REQUIRED=NO \
-  build
+  -derivedDataPath mac-native/build/DerivedData \
+  clean build
 ```
 
-### Android
+Android:
 
 ```sh
 cd android
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 ./gradlew :app:assembleDebug
 ```
 
 ## Code of Conduct
 
-Be friendly, respectful, and focus on improving the project.
+Be kind, practical, and specific. Audio and device-routing bugs are often hardware-dependent, so include device names, OS versions, connection mode, and logs whenever possible.
+
+---
+
+# 贡献指南
+
+感谢你帮助改进 USB LinkMic。
+
+## 工作流程
+
+1. Fork 本仓库。
+2. 从 `main` 创建分支。
+3. 保持改动聚焦，并在提交信息中简要说明。
+4. 提交 PR 前构建受影响的应用。
+5. 如果改动涉及 UI 或音频行为，请在 PR 中附上截图或日志。
+
+## 提交信息
+
+- `feat:` 新功能
+- `fix:` bug 修复
+- `perf:` 性能优化
+- `refactor:` 内部重构
+- `docs:` 文档改动
+- `chore:` 维护事项
+
+## 本地检查
+
+macOS：
+
+```sh
+xcodebuild \
+  -project mac-native/USBLinkMicNative.xcodeproj \
+  -scheme USBLinkMicNative \
+  -configuration Release \
+  -derivedDataPath mac-native/build/DerivedData \
+  clean build
+```
+
+Android：
+
+```sh
+cd android
+./gradlew :app:assembleDebug
+```
+
+## 行为准则
+
+保持友善、务实、具体。音频和设备路由问题常常和硬件环境有关，反馈时请尽量附上设备名、系统版本、连接模式和日志。

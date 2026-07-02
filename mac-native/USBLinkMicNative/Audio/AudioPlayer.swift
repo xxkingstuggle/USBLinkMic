@@ -36,10 +36,12 @@ final class AudioPlayer: @unchecked Sendable {
         self.audioFormat = audioFormat
         self.frameBytes = audioFormat.sampleSize * self.channelCount
 
-        // 创建 HAL Output AudioUnit（对应 cpal 在 macOS 上的底层实现）。
+        let componentSubType: OSType = outputDeviceID == nil ? kAudioUnitSubType_DefaultOutput : kAudioUnitSubType_HALOutput
+
+        // 系统默认输出使用 DefaultOutput；指定设备时使用 HALOutput，避免被系统默认输出路由固定住。
         var componentDesc = AudioComponentDescription(
             componentType: kAudioUnitType_Output,
-            componentSubType: kAudioUnitSubType_DefaultOutput,
+            componentSubType: componentSubType,
             componentManufacturer: kAudioUnitManufacturer_Apple,
             componentFlags: 0,
             componentFlagsMask: 0
@@ -70,6 +72,18 @@ final class AudioPlayer: @unchecked Sendable {
                 AudioComponentInstanceDispose(unit)
                 throw AudioPlayerError.setDeviceFailed(setStatus)
             }
+
+            var currentID = AudioDeviceID()
+            var currentSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+            let getStatus = AudioUnitGetProperty(
+                unit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &currentID,
+                &currentSize
+            )
+            NSLog("USB LinkMic AudioPlayer requested output device id=%u, current id=%u, getStatus=%d", deviceID, currentID, getStatus)
         }
 
         // 设置输出格式：与 Rust 原项目一致，i24 映射为 f32。

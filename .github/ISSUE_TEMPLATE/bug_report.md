@@ -1,3 +1,4 @@
+---
 name: Bug 反馈 / Bug Report
 about: 报告 USB LinkMic 的问题
 title: '[BUG] '
