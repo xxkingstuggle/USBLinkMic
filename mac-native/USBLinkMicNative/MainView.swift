@@ -8,14 +8,11 @@ struct MainView: View {
 
     var body: some View {
         ZStack {
-            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+            // 使用 contentBackground 材质，比 hudWindow 更轻量。
+            VisualEffectView(material: .contentBackground, blendingMode: .behindWindow)
                 .ignoresSafeArea()
 
-            HStack(spacing: 0) {
-                sidebar
-                Divider().opacity(0.45)
-                dashboard
-            }
+            content
         }
         .ignoresSafeArea(.all, edges: .top)
         .preferredColorScheme(nil)
@@ -23,6 +20,20 @@ struct MainView: View {
             SettingsSheet()
                 .environmentObject(model)
         }
+    }
+
+    private var content: some View {
+        HStack(spacing: 0) {
+            sidebar
+            Divider().opacity(0.2)
+            dashboard
+        }
+        .background(
+            // 用静态背景色替代多层材质叠加；效果一致但 GPU 合成压力更小。
+            colorScheme == .dark
+                ? Color.black.opacity(0.12)
+                : Color.white.opacity(0.18)
+        )
     }
 
     private var sidebar: some View {
@@ -664,20 +675,27 @@ private struct WaveformView: View {
                 return
             }
 
-            let step = size.width / CGFloat(samples.count)
-            let path = Path { path in
-                for (index, (minVal, maxVal)) in samples.enumerated() {
-                    let x = CGFloat(index) * step
-                    let top = mid - CGFloat(maxVal) * maxHeight * 1.5
-                    let bottom = mid - CGFloat(minVal) * maxHeight * 1.5
-                    let barHeight = max(1, abs(bottom - top))
-                    let rect = CGRect(x: x, y: min(top, bottom), width: max(1, step), height: barHeight)
-                    path.addRect(rect)
-                }
+            let count = CGFloat(samples.count)
+            let step = size.width / count
+            // 将波形绘制为连续填充路径，而不是大量独立矩形，显著降低渲染开销。
+            var path = Path()
+            path.move(to: CGPoint(x: 0, y: mid))
+            for (index, (_, maxVal)) in samples.enumerated() {
+                let x = CGFloat(index) * step
+                let y = mid - CGFloat(maxVal) * maxHeight * 1.5
+                path.addLine(to: CGPoint(x: x, y: y))
             }
-            context.fill(path, with: .color(.cyan))
+            for (index, (minVal, _)) in samples.enumerated().reversed() {
+                let x = CGFloat(index) * step
+                let y = mid - CGFloat(minVal) * maxHeight * 1.5
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+            path.closeSubpath()
+            context.fill(path, with: .color(.cyan.opacity(0.85)))
         }
         .background(Color.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // 离屏渲染合成，减少主线程绘制压力。
+        .drawingGroup(opaque: false, colorMode: .linear)
     }
 }
 
@@ -726,12 +744,11 @@ private struct VisualEffectView: NSViewRepresentable {
 private extension View {
     func glassPanel() -> some View {
         self
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.10), radius: 18, y: 10)
     }
 
     func panelFrame() -> some View {

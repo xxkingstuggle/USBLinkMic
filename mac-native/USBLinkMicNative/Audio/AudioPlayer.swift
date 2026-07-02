@@ -13,6 +13,9 @@ final class AudioPlayer: @unchecked Sendable {
     var gain: Float = 1.0
     var isMuted: Bool = false
 
+    // 预分配的读取缓冲区，避免 AVAudioEngine 渲染线程实时堆分配。
+    private var readBuffer: [Float] = []
+
     /// 启动播放器。
     func start(sampleRate: Double, channelCount: Int, outputDeviceID: AudioDeviceID?) throws {
         stop()
@@ -39,26 +42,30 @@ final class AudioPlayer: @unchecked Sendable {
         self.ringBuffer = ring
 
         let sourceNode = AVAudioSourceNode(format: format) { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
-            guard let self = self else { return noErr }
+            guard let self else { return noErr }
             let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
             let frames = Int(frameCount)
             let ch = max(1, Int(self.channelCount))
 
-            var samples = Array(repeating: Float(0), count: frames * ch)
-            _ = self.ringBuffer?.read(into: &samples, count: frames * ch)
+            // 预分配重用的读取缓冲区，避免实时渲染线程频繁堆分配。
+            let needed = frames * ch
+            if self.readBuffer.count < needed {
+                self.readBuffer = Array(repeating: Float(0), count: needed)
+            }
+            _ = self.ringBuffer?.read(into: &self.readBuffer, count: needed)
 
             let gain = self.gain
             let muted = self.isMuted
-            for i in samples.indices {
-                let s = muted ? 0 : samples[i] * gain
-                samples[i] = max(-1.0, min(1.0, s))
+            for i in 0..<needed {
+                let s = muted ? 0 : self.readBuffer[i] * gain
+                self.readBuffer[i] = s < -1.0 ? -1.0 : (s > 1.0 ? 1.0 : s)
             }
 
             for chIndex in 0..<ch {
                 guard let mData = ablPointer[chIndex].mData else { continue }
                 let ptr = mData.bindMemory(to: Float.self, capacity: frames)
                 for frame in 0..<frames {
-                    ptr[frame] = samples[frame * ch + chIndex]
+                    ptr[frame] = self.readBuffer[frame * ch + chIndex]
                 }
             }
 
@@ -82,8 +89,7 @@ final class AudioPlayer: @unchecked Sendable {
     @discardableResult
     func write(packet: AudioPacketMessage) -> [Float] {
         guard let format = AudioSampleFormat(rawValue: packet.audioFormat) else { return [] }
-        let planar = format.interleavedBytesToPlanarFloat(packet.buffer, channelCount: Int(packet.channelCount))
-        let mono = mixToMono(planar)
+        let mono = format.interleavedBytesToMonoFloat(packet.buffer, channelCount: Int(packet.channelCount))
 
         // 更新内部采样率/声道（如果后续包变化）。
         sampleRate = Double(packet.sampleRate)

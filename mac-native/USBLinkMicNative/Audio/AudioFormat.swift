@@ -25,6 +25,69 @@ enum AudioSampleFormat: UInt32, CaseIterable {
         }
     }
 
+    /// 将交错字节流直接转换为单声道 Float 样本，避免创建中间二维数组。
+    func interleavedBytesToMonoFloat(_ data: Data, channelCount: Int) -> [Float] {
+        guard channelCount > 0, data.count >= sampleSize * channelCount else { return [] }
+        let totalFrames = data.count / (sampleSize * channelCount)
+        var mono = Array(repeating: Float(0), count: totalFrames)
+
+        switch self {
+        case .u8:
+            for frame in 0..<totalFrames {
+                var sum: Float = 0
+                for ch in 0..<channelCount {
+                    let byte = data[(frame * channelCount + ch) * sampleSize]
+                    sum += Float(Int16(byte) - 128) / 128.0
+                }
+                mono[frame] = sum / Float(channelCount)
+            }
+        case .i16:
+            data.withUnsafeBytes { raw in
+                let ptr = raw.bindMemory(to: Int16.self)
+                for frame in 0..<totalFrames {
+                    var sum: Float = 0
+                    for ch in 0..<channelCount {
+                        sum += Float(ptr[frame * channelCount + ch]) / Float(Int16.max)
+                    }
+                    mono[frame] = sum / Float(channelCount)
+                }
+            }
+        case .i24:
+            for frame in 0..<totalFrames {
+                var sum: Float = 0
+                for ch in 0..<channelCount {
+                    let offset = (frame * channelCount + ch) * sampleSize
+                    sum += decodeI24(data, offset: offset) / Float(1 << 23)
+                }
+                mono[frame] = sum / Float(channelCount)
+            }
+        case .i32:
+            data.withUnsafeBytes { raw in
+                let ptr = raw.bindMemory(to: Int32.self)
+                for frame in 0..<totalFrames {
+                    var sum: Float = 0
+                    for ch in 0..<channelCount {
+                        sum += Float(ptr[frame * channelCount + ch]) / Float(Int32.max)
+                    }
+                    mono[frame] = sum / Float(channelCount)
+                }
+            }
+        case .f32:
+            data.withUnsafeBytes { raw in
+                let ptr = raw.bindMemory(to: Float.self)
+                for frame in 0..<totalFrames {
+                    var sum: Float = 0
+                    for ch in 0..<channelCount {
+                        sum += ptr[frame * channelCount + ch]
+                    }
+                    mono[frame] = sum / Float(channelCount)
+                }
+            }
+        }
+
+        return mono
+    }
+
     /// 将交错字节流转换为 [-1, 1] 的 Float 平面数组。
     /// 返回 [channel][frame] 的样本。
     func interleavedBytesToPlanarFloat(_ data: Data, channelCount: Int) -> [[Float]] {

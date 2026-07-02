@@ -96,6 +96,12 @@ final class AppModel: ObservableObject {
     @Published var logs: [String] = []
     @Published var sidebarCollapsed = false
 
+    // 限制 UI 刷新频率，避免高频率音频包触发大量 SwiftUI 重组。
+    private var pendingWaveformUpdate = false
+    private var pendingLogLines: [String] = []
+    private var logFlushTask: Task<Void, Never>?
+    private let waveformQueue = DispatchQueue(label: "USBLinkMic.WaveformUI")
+
     let relayPort = 31416
     let relaySocket = "usblinkmic_net"
     let androidPackage = "com.zjx.usblinkmic"
@@ -549,9 +555,23 @@ final class AppModel: ObservableObject {
 
     private func appendLog(_ message: String) {
         let stamp = Date().formatted(date: .omitted, time: .standard)
-        logs.append("[\(stamp)] \(message)")
-        if logs.count > 80 {
-            logs.removeFirst(logs.count - 80)
+        let line = "[\(stamp)] \(message)"
+        pendingLogLines.append(line)
+        flushLogsIfNeeded()
+    }
+
+    private func flushLogsIfNeeded() {
+        guard logFlushTask == nil else { return }
+        logFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard let self else { return }
+            self.logFlushTask = nil
+            if self.pendingLogLines.isEmpty { return }
+            self.logs.append(contentsOf: self.pendingLogLines)
+            self.pendingLogLines.removeAll()
+            if self.logs.count > 80 {
+                self.logs.removeFirst(self.logs.count - 80)
+            }
         }
     }
 
@@ -579,7 +599,20 @@ final class AppModel: ObservableObject {
             hasRealAudioSamples = true
             let mono = audioPlayer.write(packet: packet)
             waveformData.append(samples: mono, sampleRate: Double(packet.sampleRate))
-            waveSamples = waveformData.read()
+            scheduleWaveformUpdate()
+        }
+    }
+
+    private func scheduleWaveformUpdate() {
+        guard !pendingWaveformUpdate else { return }
+        pendingWaveformUpdate = true
+        waveformQueue.asyncAfter(deadline: .now() + .milliseconds(40)) { [weak self] in
+            guard let self else { return }
+            let samples = self.waveformData.read()
+            Task { @MainActor [weak self] in
+                self?.waveSamples = samples
+                self?.pendingWaveformUpdate = false
+            }
         }
     }
 
