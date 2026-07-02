@@ -15,7 +15,7 @@ android {
     defaultConfig {
         applicationId = "com.zjx.usblinkmic"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 33
         versionCode = 30
         versionName = "3.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

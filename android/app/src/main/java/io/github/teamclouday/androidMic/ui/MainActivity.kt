@@ -65,14 +65,14 @@ class MainActivity : ComponentActivity() {
                     putExtras(intent)
                 }
                 startForegroundService(serviceIntent)
-                if (intent.getBooleanExtra("fromAdb", false)) finish()
+                // 保持 Activity 存活：Android 14+ 要求 microphone FGS 从前台组件启动，
+                // 立即 finish 可能导致服务被回收。
             }
             "com.zjx.usblinkmic.STOP_MIC" -> {
                 val serviceIntent = Intent(this, ForegroundService::class.java).apply {
                     action = "com.zjx.usblinkmic.STOP_MIC"
                 }
                 startForegroundService(serviceIntent)
-                if (intent.getBooleanExtra("fromAdb", false)) finish()
             }
         }
     }
