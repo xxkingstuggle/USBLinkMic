@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import io.github.teamclouday.androidMic.AndroidMicApp
+import io.github.teamclouday.androidMic.domain.service.ForegroundService
 import io.github.teamclouday.androidMic.ui.home.HomeScreen
 import io.github.teamclouday.androidMic.ui.theme.USBLinkMicTheme
 
@@ -34,6 +35,7 @@ class MainActivity : ComponentActivity() {
                 HomeScreen(vm, ::requestPermissions)
             }
         }
+        handleAdbIntent(intent)
     }
 
     override fun onStart() {
@@ -49,8 +51,29 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        handleAdbIntent(intent)
         if (intent.getBooleanExtra("ForegroundServiceBound", false)) {
             vm.bindCheck()
+        }
+    }
+
+    private fun handleAdbIntent(intent: Intent?) {
+        when (intent?.action) {
+            "com.zjx.usblinkmic.START_MIC" -> {
+                val serviceIntent = Intent(this, ForegroundService::class.java).apply {
+                    action = "com.zjx.usblinkmic.START_MIC"
+                    putExtras(intent)
+                }
+                startForegroundService(serviceIntent)
+                if (intent.getBooleanExtra("fromAdb", false)) finish()
+            }
+            "com.zjx.usblinkmic.STOP_MIC" -> {
+                val serviceIntent = Intent(this, ForegroundService::class.java).apply {
+                    action = "com.zjx.usblinkmic.STOP_MIC"
+                }
+                startForegroundService(serviceIntent)
+                if (intent.getBooleanExtra("fromAdb", false)) finish()
+            }
         }
     }
 

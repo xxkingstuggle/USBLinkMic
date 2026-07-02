@@ -105,6 +105,7 @@ final class AppModel: ObservableObject {
     let relayPort = 31416
     let relaySocket = "usblinkmic_net"
     let androidPackage = "com.zjx.usblinkmic"
+    let mainActivity = "io.github.teamclouday.androidMic.ui.MainActivity"
     let micService = "io.github.teamclouday.androidMic.domain.service.ForegroundService"
     let networkActivity = "io.github.teamclouday.androidMic.network.LinkNetActivity"
     private let micReceiver = MicReceiver()
@@ -234,9 +235,10 @@ final class AppModel: ObservableObject {
         let reverse = await adb(["-s", serial, "reverse", "tcp:\(audioPort)", "tcp:\(audioPort)"])
         appendLog("手机麦克风：adb reverse 状态 \(reverse.status)\(formatShellDetail(reverse))")
         let result = await adb([
-            "-s", serial, "shell", "am", "start-foreground-service",
+            "-s", serial, "shell", "am", "start",
             "-a", "com.zjx.usblinkmic.START_MIC",
-            "-n", "\(androidPackage)/\(micService)",
+            "-n", "\(androidPackage)/\(mainActivity)",
+            "--ez", "fromAdb", "true",
             "--ei", "port", "\(audioPort)",
             "--ei", "sampleRate", "\(micSampleRate)",
             "--ei", "channelCount", "\(micChannelCount)",
@@ -273,9 +275,10 @@ final class AppModel: ObservableObject {
 
         if micConnectionMode == .adb, let serial = await selectedSerial() {
             let stop = await adb([
-                "-s", serial, "shell", "am", "start-foreground-service",
+                "-s", serial, "shell", "am", "start",
                 "-a", "com.zjx.usblinkmic.STOP_MIC",
-                "-n", "\(androidPackage)/\(micService)"
+                "-n", "\(androidPackage)/\(mainActivity)",
+                "--ez", "fromAdb", "true"
             ])
             appendLog("手机麦克风：Android 停止服务状态 \(stop.status)\(formatShellDetail(stop))")
             let remove = await adb(["-s", serial, "reverse", "--remove", "tcp:\(audioPort)"])
