@@ -22,16 +22,10 @@
         <activity
             android:name="io.github.teamclouday.androidMic.ui.MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
             android:theme="@style/Theme.AndroidMic">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="com.zjx.usblinkmic.START_MIC" />
-                <action android:name="com.zjx.usblinkmic.STOP_MIC" />
-                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
