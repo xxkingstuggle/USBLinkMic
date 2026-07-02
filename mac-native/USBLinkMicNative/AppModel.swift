@@ -636,6 +636,7 @@ final class AppModel: ObservableObject {
     }
 
     func saveSettings() {
+        let hadRunningMic = micState.isOn
         defaults.set(audioDevice, forKey: "audioDevice")
         defaults.set(audioPort, forKey: "audioPort")
         defaults.set(micConnectionMode.rawValue, forKey: "micConnectionMode")
@@ -649,6 +650,14 @@ final class AppModel: ObservableObject {
         defaults.set(routes, forKey: "routes")
         defaults.set(selectedAdapter?.ip, forKey: "selectedAdapterIP")
         appendLog("设置已保存")
+        // 如果手机麦克风正在运行，重启它以应用新的输出设备/音频参数。
+        if hadRunningMic {
+            Task {
+                await stopMic()
+                await startMic()
+                appendLog("手机麦克风已重启以应用新设置")
+            }
+        }
     }
 
     func selectAdapter(_ adapter: NetworkAdapter) {

@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import AudioToolbox
 
 /// 管理 Mac 端音频输出：把从手机传来的样本写入 ring buffer，再通过 AVAudioEngine 播出。
 final class AudioPlayer: @unchecked Sendable {
@@ -9,6 +10,9 @@ final class AudioPlayer: @unchecked Sendable {
     private var sampleRate: Double = 44100
     private var channelCount: Int = 1
     private var format: AVAudioFormat?
+
+    // 保存切换输出设备前的系统默认设备，stop 时恢复。
+    private var previousDefaultDeviceID: AudioDeviceID? = nil
 
     var gain: Float = 1.0
     var isMuted: Bool = false
@@ -31,9 +35,13 @@ final class AudioPlayer: @unchecked Sendable {
 
         let engine = AVAudioEngine()
 
-        // 如指定了输出设备，临时把系统默认输出切过去。
+        // 如指定了输出设备，先保存当前系统默认设备，再把系统默认输出切过去，
+        // 这样 AVAudioEngine 启动时会绑定到该设备。停止时恢复原来的默认设备。
         if let deviceID = outputDeviceID {
-            setOutputDevice(deviceID: deviceID)
+            previousDefaultDeviceID = currentDefaultOutputDevice()
+            try setOutputDevice(deviceID: deviceID)
+        } else {
+            previousDefaultDeviceID = nil
         }
 
         // ring buffer 容量按 1.5 秒计算（单声道 Float 样本）。
@@ -86,6 +94,12 @@ final class AudioPlayer: @unchecked Sendable {
         engine?.stop()
         engine = nil
         ringBuffer?.reset()
+
+        // 恢复之前的系统默认输出设备，避免影响其他应用。
+        if let previousID = previousDefaultDeviceID {
+            try? restoreDefaultOutputDevice(deviceID: previousID)
+            previousDefaultDeviceID = nil
+        }
     }
 
     /// 写入音频包数据。可在任意线程调用。
@@ -102,18 +116,50 @@ final class AudioPlayer: @unchecked Sendable {
         return mono
     }
 
-    private func setOutputDevice(deviceID: AudioDeviceID) {
+    private func setOutputDevice(deviceID: AudioDeviceID) throws {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultOutputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
         var id = deviceID
-        AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &id)
+        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, size, &id)
+        if status != noErr {
+            throw AudioPlayerError.setDeviceFailed(status)
+        }
+    }
+
+    private func currentDefaultOutputDevice() -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var deviceID: AudioDeviceID = 0
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID)
+        return status == noErr && deviceID != 0 ? deviceID : nil
+    }
+
+    private func restoreDefaultOutputDevice(deviceID: AudioDeviceID) throws {
+        try setOutputDevice(deviceID: deviceID)
     }
 }
 
 enum AudioPlayerError: Error {
     case badFormat
     case engineStartFailed
+    case setDeviceFailed(OSStatus)
+
+    var localizedDescription: String {
+        switch self {
+        case .badFormat:
+            return "音频格式无效"
+        case .engineStartFailed:
+            return "AVAudioEngine 启动失败"
+        case .setDeviceFailed(let status):
+            return "无法设置音频输出设备 (OSStatus: \(status))"
+        }
+    }
 }
