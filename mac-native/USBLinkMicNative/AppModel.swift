@@ -200,9 +200,11 @@ final class AppModel: ObservableObject {
 
         do {
             let deviceID = audioDevice == "系统默认输出" ? nil : systemOutputDeviceID(named: audioDevice)
+            let format = AudioSampleFormat.from(string: micAudioFormat) ?? .i16
             try audioPlayer.start(
                 sampleRate: Double(micSampleRate),
                 channelCount: micChannelCount,
+                audioFormat: format,
                 outputDeviceID: deviceID
             )
             audioPlayer.gain = Float(micGain)
@@ -601,9 +603,12 @@ final class AppModel: ObservableObject {
                 self?.appendLog("手机麦克风：\(message)")
             }
         case .packet(let packet):
-            let mono = audioPlayer.write(packet: packet)
-            waveformData.append(samples: mono, sampleRate: Double(packet.sampleRate))
-            scheduleWaveformUpdate()
+            audioPlayer.write(packet: packet)
+            if let format = AudioSampleFormat(rawValue: packet.audioFormat) {
+                let mono = format.interleavedBytesToMonoFloat(packet.buffer, channelCount: Int(packet.channelCount))
+                waveformData.append(samples: mono, sampleRate: Double(packet.sampleRate))
+                scheduleWaveformUpdate()
+            }
         }
     }
 
@@ -636,7 +641,6 @@ final class AppModel: ObservableObject {
     }
 
     func saveSettings() {
-        let hadRunningMic = micState.isOn
         defaults.set(audioDevice, forKey: "audioDevice")
         defaults.set(audioPort, forKey: "audioPort")
         defaults.set(micConnectionMode.rawValue, forKey: "micConnectionMode")
@@ -660,10 +664,12 @@ final class AppModel: ObservableObject {
     /// 仅重新初始化 Mac 音频播放器，用于切换输出设备或音频参数时不中断手机到 Mac 的网络连接。
     private func restartAudioPlayer() {
         let deviceID = audioDevice == "系统默认输出" ? nil : systemOutputDeviceID(named: audioDevice)
+        let format = AudioSampleFormat.from(string: micAudioFormat) ?? .i16
         do {
             try audioPlayer.start(
                 sampleRate: Double(micSampleRate),
                 channelCount: micChannelCount,
+                audioFormat: format,
                 outputDeviceID: deviceID
             )
             audioPlayer.gain = Float(micGain)

@@ -25,6 +25,17 @@ enum AudioSampleFormat: UInt32, CaseIterable {
         }
     }
 
+    static func from(string: String) -> AudioSampleFormat? {
+        switch string.lowercased() {
+        case "u8": return .u8
+        case "i16": return .i16
+        case "i24": return .i24
+        case "i32": return .i32
+        case "f32": return .f32
+        default: return nil
+        }
+    }
+
     /// 将交错字节流直接转换为单声道 Float 样本，避免创建中间二维数组。
     func interleavedBytesToMonoFloat(_ data: Data, channelCount: Int) -> [Float] {
         guard channelCount > 0, data.count >= sampleSize * channelCount else { return [] }

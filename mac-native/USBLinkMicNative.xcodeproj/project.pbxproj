@@ -17,6 +17,7 @@
 		1A0003020000000000000001 /* SampleRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002020000000000000001 /* SampleRingBuffer.swift */; };
 		1A0003030000000000000001 /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002030000000000000001 /* AudioPlayer.swift */; };
 		1A0003040000000000000001 /* WaveformData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002040000000000000001 /* WaveformData.swift */; };
+		1A0003050000000000000001 /* ByteRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002050000000000000001 /* ByteRingBuffer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 		1A0002020000000000000001 /* SampleRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleRingBuffer.swift; sourceTree = "<group>"; };
 		1A0002030000000000000001 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
 		1A0002040000000000000001 /* WaveformData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformData.swift; sourceTree = "<group>"; };
+		1A0002050000000000000001 /* ByteRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ByteRingBuffer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,6 +75,7 @@
 				1A0002020000000000000001 /* SampleRingBuffer.swift */,
 				1A0002030000000000000001 /* AudioPlayer.swift */,
 				1A0002040000000000000001 /* WaveformData.swift */,
+				1A0002050000000000000001 /* ByteRingBuffer.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -166,6 +169,7 @@
 				1A0003020000000000000001 /* SampleRingBuffer.swift in Sources */,
 				1A0003030000000000000001 /* AudioPlayer.swift in Sources */,
 				1A0003040000000000000001 /* WaveformData.swift in Sources */,
+				1A0003050000000000000001 /* ByteRingBuffer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
