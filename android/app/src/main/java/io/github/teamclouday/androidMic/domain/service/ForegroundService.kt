@@ -316,18 +316,25 @@ class ForegroundService : Service() {
             return
         }
 
-        managerStream?.start(
-            managerAudio!!.audioStream { levels ->
-                if (levels.isNotEmpty()) {
-                    replyUi(ResponseData(waveLevels = levels), replyTo)
-                }
-            },
-            serviceMessenger
-        )
-        states.isStreamStarted = true
-        states.mode = msg.mode!!
-        Log.d(TAG, "startStream [connected] ${managerStream?.getInfo()}")
-        replyUi(makeStatusResponse(msg = getString(R.string.connected_device) + (managerStream?.getInfo() ?: ""), isConnected = true), replyTo)
+        try {
+            managerStream?.start(
+                managerAudio!!.audioStream { levels ->
+                    if (levels.isNotEmpty()) {
+                        replyUi(ResponseData(waveLevels = levels), replyTo)
+                    }
+                },
+                serviceMessenger
+            )
+            states.isStreamStarted = true
+            states.mode = msg.mode!!
+            Log.d(TAG, "startStream [connected] ${managerStream?.getInfo()}")
+            replyUi(makeStatusResponse(msg = getString(R.string.connected_device) + (managerStream?.getInfo() ?: ""), isConnected = true), replyTo)
+        } catch (e: Throwable) {
+            Log.e(TAG, "startStream failed: ${e.javaClass.simpleName}: ${e.message}", e)
+            replyUi(makeStatusResponse(msg = getString(R.string.error) + e.message, isConnected = false), replyTo)
+            shutdownStream(); shutdownAudio()
+            if (!isBind) { stopService() }
+        }
     }
 
     private fun makeStatusResponse(
@@ -369,14 +376,28 @@ class ForegroundService : Service() {
             return true
         }
         Log.d(TAG, "startAudio [start]")
-        managerAudio?.shutdown()
+        managerAudio?.let {
+            try {
+                it.shutdown()
+            } catch (e: Throwable) {
+                Log.e(TAG, "startAudio: failed to shutdown previous audio: ${e.message}")
+            }
+        }
+        managerAudio = null
         try {
             managerAudio = MicAudioManager(applicationContext, scope, msg.sampleRate!!.value, msg.audioFormat!!.value, msg.channelCount!!.value, msg.audioSource!!)
-        } catch (e: IllegalArgumentException) {
+        } catch (e: Throwable) {
+            Log.e(TAG, "startAudio init failed: ${e.javaClass.simpleName}: ${e.message}", e)
             replyUi(makeStatusResponse(msg = getString(R.string.error) + e.message, isConnected = false), replyTo)
             return false
         }
-        managerAudio?.start()
+        try {
+            managerAudio?.start()
+        } catch (e: Throwable) {
+            Log.e(TAG, "startAudio recording failed: ${e.javaClass.simpleName}: ${e.message}", e)
+            replyUi(makeStatusResponse(msg = getString(R.string.error) + e.message, isConnected = false), replyTo)
+            return false
+        }
         Log.d(TAG, "startAudio [recording]")
         states.isAudioStarted = true
         replyUi(makeStatusResponse(msg = getString(R.string.mic_start_recording)), replyTo)
