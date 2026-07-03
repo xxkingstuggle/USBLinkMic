@@ -1,14 +1,16 @@
 import Foundation
+import os
 
 /// 线程安全字节环形缓冲区，模仿 Rust 原项目中的 rtrb（Ring Buffer）。
 /// 写入端为网络接收线程，读取端为音频渲染线程。
+/// 使用 os_unfair_lock 避免 NSLock 在实时音频线程上的优先级反转风险。
 final class ByteRingBuffer: @unchecked Sendable {
     private let buffer: UnsafeMutablePointer<UInt8>
     private let capacity: Int
     private var writeIndex: Int = 0
     private var readIndex: Int = 0
     private var available: Int = 0
-    private let lock = NSLock()
+    private var lock = os_unfair_lock_s()
 
     init(capacity: Int) {
         self.capacity = max(capacity, 1024)
@@ -24,8 +26,8 @@ final class ByteRingBuffer: @unchecked Sendable {
         let count = data.count
         guard count > 0 else { return 0 }
 
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
 
         let writable = min(count, capacity)
         var srcOffset = 0
@@ -65,8 +67,8 @@ final class ByteRingBuffer: @unchecked Sendable {
         let alignedCount = max(0, count - (count % max(1, frameBytes)))
         guard alignedCount > 0 else { return 0 }
 
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
 
         let toRead = min(alignedCount, available)
         var dstOffset = 0
@@ -99,16 +101,16 @@ final class ByteRingBuffer: @unchecked Sendable {
     }
 
     func reset() {
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
         writeIndex = 0
         readIndex = 0
         available = 0
     }
 
     var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
         return available
     }
 }

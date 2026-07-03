@@ -1,9 +1,11 @@
 import Foundation
+import os
 
 /// 维护一段真实波形数据，用于 UI 绘制。
 /// 按 10ms 窗口计算每个窗口的 (min, max) 样本值，并使用循环缓冲区避免 O(n) 移位。
+/// 使用 os_unfair_lock 确保线程安全且无优先级反转。
 final class WaveformData: @unchecked Sendable {
-    private let lock = NSLock()
+    private var lock = os_unfair_lock_s()
     private var data: [(Float, Float)]
     private var head: Int = 0
     private var count: Int = 0
@@ -35,8 +37,8 @@ final class WaveformData: @unchecked Sendable {
             start = end
         }
 
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
 
         for window in windows {
             data[(head + count) % capacity] = window
@@ -49,8 +51,8 @@ final class WaveformData: @unchecked Sendable {
     }
 
     func read() -> [(Float, Float)] {
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
         var result: [(Float, Float)] = []
         result.reserveCapacity(count)
         for i in 0..<count {
@@ -60,8 +62,8 @@ final class WaveformData: @unchecked Sendable {
     }
 
     func reset() {
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
         head = 0
         count = 0
     }

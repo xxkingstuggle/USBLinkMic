@@ -1,5 +1,6 @@
 import Foundation
 import AudioToolbox
+import Accelerate
 
 /// 管理 Mac 端音频输出：直接创建 AudioUnit HAL Output 到指定设备，
 /// 输出格式跟随用户配置（i16/i32/f32/u8，i24 映射为 f32），音频数据以原始字节存入 ring buffer。
@@ -7,6 +8,8 @@ import AudioToolbox
 ///   - 枚举设备并保存设备 ID
 ///   - 创建 stream 时指定设备
 ///   - 回调从字节 ring buffer 读取并按格式解码到输出缓冲区
+///
+/// 解码使用 Accelerate/vDSP 向量化运算，避免实时音频线程上的逐样本 Swift 循环。
 final class AudioPlayer: @unchecked Sendable {
     private var audioUnit: AudioUnit?
     private var ringBuffer: ByteRingBuffer?
@@ -19,8 +22,12 @@ final class AudioPlayer: @unchecked Sendable {
     var gain: Float = 1.0
     var isMuted: Bool = false
 
-    // 预分配的读取缓冲区，避免渲染线程实时堆分配。
+    // 预分配的缓冲区，避免渲染线程实时堆分配。
     private var readBuffer: [UInt8] = []
+    /// 浮点工作区，供 vDSP 中间运算复用。
+    private var floatWorkspace: [Float] = []
+    /// i24 解包用 Int32 工作区。
+    private var i32Workspace: [Int32] = []
 
     /// 启动播放器。
     func start(
@@ -156,7 +163,9 @@ final class AudioPlayer: @unchecked Sendable {
             audioFormat = format
         }
         frameBytes = audioFormat.sampleSize * channelCount
+        let t0 = perfNow()
         _ = ringBuffer?.write(packet.buffer)
+        sharedPerfTracer.record("ringbuf.write", nanos: perfNow() - t0)
     }
 
     fileprivate func render(
@@ -175,7 +184,9 @@ final class AudioPlayer: @unchecked Sendable {
             readBuffer = Array(repeating: UInt8(0), count: neededBytes)
         }
 
+        let t0 = perfNow()
         let readBytes = ringBuffer.read(into: &readBuffer, count: neededBytes, frameBytes: frameBytes)
+        let t1 = perfNow()
 
         // 按格式解码字节到输出缓冲区。i24 以 f32 输出。
         switch audioFormat {
@@ -191,111 +202,325 @@ final class AudioPlayer: @unchecked Sendable {
             decodeF32(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
         }
 
+        let t2 = perfNow()
+        sharedPerfTracer.record("render.ringbuf_read", nanos: t1 - t0)
+        sharedPerfTracer.record("render.decode", nanos: t2 - t1)
+
         return noErr
     }
 
-    // MARK: - 解码辅助
+    // MARK: - 工作区管理
+
+    /// 确保浮点工作区至少有 `count` 个元素。
+    private func ensureFloatWorkspace(_ count: Int) {
+        if floatWorkspace.count < count {
+            floatWorkspace = Array(repeating: 0, count: count)
+        }
+    }
+
+    /// 确保 Int32 工作区至少有 `count` 个元素。
+    private func ensureI32Workspace(_ count: Int) {
+        if i32Workspace.count < count {
+            i32Workspace = Array(repeating: 0, count: count)
+        }
+    }
+
+    // MARK: - vDSP 解码
+
+    /// 应用增益和静音到浮点缓冲区（就地操作，裸指针版本）。
+    private func applyGainAndMute(_ ptr: UnsafeMutablePointer<Float>, count: Int) {
+        let n = vDSP_Length(count)
+        if isMuted {
+            vDSP_vclr(ptr, 1, n)
+        } else {
+            var g = gain
+            vDSP_vsmul(ptr, 1, &g, ptr, 1, n)
+            var low: Float = -1.0
+            var high: Float = 1.0
+            vDSP_vclip(ptr, 1, &low, &high, ptr, 1, n)
+        }
+    }
+
+    /// 应用增益和静音到浮点工作区（数组版本）。
+    private func applyGainAndMute(_ samples: inout [Float], count: Int) {
+        samples.withUnsafeMutableBufferPointer { buf in
+            guard let ptr = buf.baseAddress else { return }
+            applyGainAndMute(ptr, count: count)
+        }
+    }
+
+    /// 零填充输出缓冲区从 `start` 位置开始。
+    private func zeroFill<T: BinaryInteger>(_ ptr: UnsafeMutablePointer<T>, from start: Int, count: Int) {
+        if start < count {
+            ptr.advanced(by: start).initialize(repeating: 0, count: count - start)
+        }
+    }
+
+    /// 零填充浮点输出缓冲区。
+    private func zeroFillFloat(_ ptr: UnsafeMutablePointer<Float>, from start: Int, count: Int) {
+        if start < count {
+            vDSP_vclr(ptr.advanced(by: start), 1, vDSP_Length(count - start))
+        }
+    }
+
+    // MARK: - U8 解码
 
     private func decodeU8(buffer: UnsafeMutableRawPointer, bytes: [UInt8], readBytes: Int, frames: Int) {
-        let ptr = buffer.assumingMemoryBound(to: UInt8.self)
-        for frame in 0..<frames {
-            for ch in 0..<channelCount {
-                let sample: UInt8
-                if frame * frameBytes + ch < readBytes {
-                    let raw = bytes[frame * frameBytes + ch]
-                    let floatValue = isMuted ? 0.0 : (Float(Int16(raw) - 128) / 128.0) * gain
-                    let clamped = max(-1.0, min(1.0, floatValue))
-                    sample = UInt8(clamped * 128.0 + 128.0)
-                } else {
-                    sample = 128
+        let output = buffer.assumingMemoryBound(to: UInt8.self)
+        let sampleCount = frames * channelCount
+        ensureFloatWorkspace(sampleCount)
+        let srcSamples = min(readBytes / (1 * channelCount), frames) * channelCount
+
+        guard srcSamples > 0 else {
+            output.initialize(repeating: 128, count: sampleCount)
+            return
+        }
+
+        // vDSP 向量化：u8 → float [0,255] → [-1,1] → gain/clamp → [0,255] → u8
+        if channelCount == 1 {
+            bytes.withUnsafeBytes { raw in
+                guard let src = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                let n = vDSP_Length(srcSamples)
+
+                floatWorkspace.withUnsafeMutableBufferPointer { buf in
+                    guard let ws = buf.baseAddress else { return }
+                    // u8 → float [0, 255]
+                    vDSP_vfltu8(src, 1, ws, 1, n)
+
+                    // Map to [-1, 1]: (val / 128) - 1
+                    var scale: Float = 1.0 / 128.0
+                    var offset: Float = -1.0
+                    vDSP_vsmsa(ws, 1, &scale, &offset, ws, 1, n)
+
+                    // Gain + clamp
+                    applyGainAndMute(ws, count: srcSamples)
+
+                    // Map back to [0, 255]: val * 128 + 128
+                    scale = 128.0
+                    offset = 128.0
+                    vDSP_vsmsa(ws, 1, &scale, &offset, ws, 1, n)
+
+                    // Float → u8
+                    vDSP_vfixu8(ws, 1, output, 1, n)
                 }
-                ptr[frame * channelCount + ch] = sample
+            }
+        } else {
+            // 多声道：逐声道处理，利用 stride。
+            let framesPerChannel = srcSamples / channelCount
+            output.initialize(repeating: 128, count: sampleCount)
+
+            bytes.withUnsafeBytes { raw in
+                guard let src = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                for ch in 0..<channelCount {
+                    let n = vDSP_Length(framesPerChannel)
+
+                    floatWorkspace.withUnsafeMutableBufferPointer { buf in
+                        guard let ws = buf.baseAddress else { return }
+                        var scale: Float = 1.0 / 128.0
+                        var offset: Float = -1.0
+
+                        vDSP_vfltu8(src.advanced(by: ch), vDSP_Stride(channelCount), ws, 1, n)
+                        vDSP_vsmsa(ws, 1, &scale, &offset, ws, 1, n)
+                        applyGainAndMute(ws, count: framesPerChannel)
+                        scale = 128.0
+                        offset = 128.0
+                        vDSP_vsmsa(ws, 1, &scale, &offset, ws, 1, n)
+                        vDSP_vfixu8(ws, 1, output.advanced(by: ch), vDSP_Stride(channelCount), n)
+                    }
+                }
             }
         }
     }
+
+    // MARK: - I16 解码
 
     private func decodeI16(buffer: UnsafeMutableRawPointer, bytes: [UInt8], readBytes: Int, frames: Int) {
-        let ptr = buffer.assumingMemoryBound(to: Int16.self)
-        for frame in 0..<frames {
-            for ch in 0..<channelCount {
-                let sample: Int16
-                if (frame * frameBytes + ch * 2 + 1) < readBytes {
-                    let idx = frame * frameBytes + ch * 2
-                    let raw = Int16(bytes[idx]) | (Int16(bytes[idx + 1]) << 8)
-                    let floatValue = isMuted ? 0.0 : (Float(raw) / Float(Int16.max)) * gain
-                    let clamped = max(-1.0, min(1.0, floatValue))
-                    sample = Int16(clamped * Float(Int16.max))
-                } else {
-                    sample = 0
+        let output = buffer.assumingMemoryBound(to: Int16.self)
+        let sampleCount = frames * channelCount
+        ensureFloatWorkspace(sampleCount)
+        let srcSamples = min(readBytes / (2 * channelCount), frames) * channelCount
+
+        guard srcSamples > 0 else {
+            output.initialize(repeating: 0, count: sampleCount)
+            return
+        }
+
+        if channelCount == 1 {
+            bytes.withUnsafeBytes { raw in
+                guard let src = raw.bindMemory(to: Int16.self).baseAddress else { return }
+                let n = vDSP_Length(srcSamples)
+
+                floatWorkspace.withUnsafeMutableBufferPointer { buf in
+                    guard let ws = buf.baseAddress else { return }
+                    // Int16 → Float (divides by 32768)
+                    vDSP_vflt16(src, 1, ws, 1, n)
+                    applyGainAndMute(ws, count: srcSamples)
+                    // Float → Int16
+                    vDSP_vfixr16(ws, 1, output, 1, n)
                 }
-                ptr[frame * channelCount + ch] = sample
+            }
+        } else {
+            let framesPerChannel = srcSamples / channelCount
+            output.initialize(repeating: 0, count: sampleCount)
+
+            bytes.withUnsafeBytes { raw in
+                guard let src = raw.bindMemory(to: Int16.self).baseAddress else { return }
+                for ch in 0..<channelCount {
+                    let n = vDSP_Length(framesPerChannel)
+                    floatWorkspace.withUnsafeMutableBufferPointer { buf in
+                        guard let ws = buf.baseAddress else { return }
+                        // 从交错源按 stride 读取
+                        vDSP_vflt16(src.advanced(by: ch), vDSP_Stride(channelCount), ws, 1, n)
+                        applyGainAndMute(ws, count: framesPerChannel)
+                        // 写回交错输出
+                        vDSP_vfixr16(ws, 1, output.advanced(by: ch), vDSP_Stride(channelCount), n)
+                    }
+                }
             }
         }
     }
+
+    // MARK: - I24 解码（输出 f32）
 
     private func decodeI24AsF32(buffer: UnsafeMutableRawPointer, bytes: [UInt8], readBytes: Int, frames: Int) {
-        let ptr = buffer.assumingMemoryBound(to: Float.self)
-        for frame in 0..<frames {
+        let output = buffer.assumingMemoryBound(to: Float.self)
+        let sampleCount = frames * channelCount
+        let srcFrames = min(readBytes / (3 * channelCount), frames)
+        let srcSamples = srcFrames * channelCount
+
+        // 初始化输出为 0
+        vDSP_vclr(output, 1, vDSP_Length(sampleCount))
+
+        guard srcSamples > 0 else { return }
+
+        ensureI32Workspace(srcSamples)
+        ensureFloatWorkspace(srcSamples)
+
+        // 1. 将 24-bit 交错字节解包为 Int32（必须逐字节，但用本地变量加速）
+        let frameBytes3 = 3 * channelCount
+        var i32Idx = 0
+        for frame in 0..<srcFrames {
+            let base = frame * frameBytes3
             for ch in 0..<channelCount {
-                let sample: Float
-                if (frame * frameBytes + ch * 3 + 2) < readBytes {
-                    let idx = frame * frameBytes + ch * 3
-                    let b0 = Int32(bytes[idx])
-                    let b1 = Int32(bytes[idx + 1])
-                    let b2 = Int32(bytes[idx + 2])
-                    var value = (b0 << 8) | (b1 << 16) | (b2 << 24)
-                    value >>= 8
-                    sample = isMuted ? 0.0 : (Float(value) / Float(1 << 23)) * gain
-                } else {
-                    sample = 0.0
+                let idx = base + ch * 3
+                let b0 = Int32(bytes[idx])
+                let b1 = Int32(bytes[idx + 1])
+                let b2 = Int32(bytes[idx + 2])
+                var value = (b0 << 8) | (b1 << 16) | (b2 << 24)
+                value >>= 8 // 符号扩展
+                i32Workspace[i32Idx] = value
+                i32Idx += 1
+            }
+        }
+
+        // 2. vDSP 向量化：Int32 → Float → gain/clamp → 写入交错 f32
+        if channelCount == 1 {
+            let n = vDSP_Length(srcSamples)
+            i32Workspace.withUnsafeBufferPointer { i32Buf in
+                guard let i32Ptr = i32Buf.baseAddress else { return }
+                floatWorkspace.withUnsafeMutableBufferPointer { buf in
+                    guard let ws = buf.baseAddress else { return }
+                    vDSP_vflt32(i32Ptr, 1, ws, 1, n)
+                    applyGainAndMute(ws, count: srcSamples)
+                    output.update(from: ws, count: srcSamples)
                 }
-                ptr[frame * channelCount + ch] = sample
+            }
+        } else {
+            // 需要按声道 stride 写入交错 f32 输出
+            i32Workspace.withUnsafeBufferPointer { i32Buf in
+                guard let i32Ptr = i32Buf.baseAddress else { return }
+                for ch in 0..<channelCount {
+                    let n = vDSP_Length(srcFrames)
+                    floatWorkspace.withUnsafeMutableBufferPointer { buf in
+                        guard let ws = buf.baseAddress else { return }
+                        // 用 stride 从交错 Int32 中提取声道 ch
+                        vDSP_vflt32(i32Ptr.advanced(by: ch), vDSP_Stride(channelCount), ws, 1, n)
+                        applyGainAndMute(ws, count: srcFrames)
+                        // 写入交错 f32 输出
+                        var dstIdx = ch
+                        for frame in 0..<srcFrames {
+                            output[dstIdx] = ws[frame]
+                            dstIdx += channelCount
+                        }
+                    }
+                }
             }
         }
     }
+
+    // MARK: - I32 解码
 
     private func decodeI32(buffer: UnsafeMutableRawPointer, bytes: [UInt8], readBytes: Int, frames: Int) {
-        let ptr = buffer.assumingMemoryBound(to: Int32.self)
-        for frame in 0..<frames {
-            for ch in 0..<channelCount {
-                let sample: Int32
-                if (frame * frameBytes + ch * 4 + 3) < readBytes {
-                    let idx = frame * frameBytes + ch * 4
-                    let raw = Int32(bytes[idx])
-                        | (Int32(bytes[idx + 1]) << 8)
-                        | (Int32(bytes[idx + 2]) << 16)
-                        | (Int32(bytes[idx + 3]) << 24)
-                    let floatValue = isMuted ? 0.0 : (Float(raw) / Float(Int32.max)) * gain
-                    let clamped = max(-1.0, min(1.0, floatValue))
-                    sample = Int32(clamped * Float(Int32.max))
-                } else {
-                    sample = 0
+        let output = buffer.assumingMemoryBound(to: Int32.self)
+        let sampleCount = frames * channelCount
+        ensureFloatWorkspace(sampleCount)
+        let srcSamples = min(readBytes / (4 * channelCount), frames) * channelCount
+
+        guard srcSamples > 0 else {
+            output.initialize(repeating: 0, count: sampleCount)
+            return
+        }
+
+        if channelCount == 1 {
+            bytes.withUnsafeBytes { raw in
+                guard let src = raw.bindMemory(to: Int32.self).baseAddress else { return }
+                let n = vDSP_Length(srcSamples)
+
+                floatWorkspace.withUnsafeMutableBufferPointer { buf in
+                    guard let ws = buf.baseAddress else { return }
+                    // Int32 → Float (divides by 2^31)
+                    vDSP_vflt32(src, 1, ws, 1, n)
+                    applyGainAndMute(ws, count: srcSamples)
+                    // Float → Int32
+                    vDSP_vfixr32(ws, 1, output, 1, n)
                 }
-                ptr[frame * channelCount + ch] = sample
+            }
+        } else {
+            let framesPerChannel = srcSamples / channelCount
+            output.initialize(repeating: 0, count: sampleCount)
+
+            bytes.withUnsafeBytes { raw in
+                guard let src = raw.bindMemory(to: Int32.self).baseAddress else { return }
+                for ch in 0..<channelCount {
+                    let n = vDSP_Length(framesPerChannel)
+                    floatWorkspace.withUnsafeMutableBufferPointer { buf in
+                        guard let ws = buf.baseAddress else { return }
+                        vDSP_vflt32(src.advanced(by: ch), vDSP_Stride(channelCount), ws, 1, n)
+                        applyGainAndMute(ws, count: framesPerChannel)
+                        vDSP_vfixr32(ws, 1, output.advanced(by: ch), vDSP_Stride(channelCount), n)
+                    }
+                }
             }
         }
     }
 
+    // MARK: - F32 解码（直通）
+
     private func decodeF32(buffer: UnsafeMutableRawPointer, bytes: [UInt8], readBytes: Int, frames: Int) {
-        let ptr = buffer.assumingMemoryBound(to: Float.self)
-        for frame in 0..<frames {
-            for ch in 0..<channelCount {
-                let sample: Float
-                if (frame * frameBytes + ch * 4 + 3) < readBytes {
-                    let idx = frame * frameBytes + ch * 4
-                    var value: UInt32 = 0
-                    value |= UInt32(bytes[idx])
-                    value |= UInt32(bytes[idx + 1]) << 8
-                    value |= UInt32(bytes[idx + 2]) << 16
-                    value |= UInt32(bytes[idx + 3]) << 24
-                    var rawFloat: Float = 0
-                    memcpy(&rawFloat, &value, 4)
-                    sample = isMuted ? 0.0 : rawFloat * gain
-                } else {
-                    sample = 0.0
-                }
-                ptr[frame * channelCount + ch] = sample
+        let output = buffer.assumingMemoryBound(to: Float.self)
+        let sampleCount = frames * channelCount
+
+        // 先零填充
+        vDSP_vclr(output, 1, vDSP_Length(sampleCount))
+
+        let srcSamples = min(readBytes / (4 * channelCount), frames) * channelCount
+        guard srcSamples > 0 else { return }
+
+        bytes.withUnsafeBytes { raw in
+            guard let src = raw.bindMemory(to: Float.self).baseAddress else { return }
+
+            if isMuted {
+                // 静音时无需拷贝，已经零填充
+                return
             }
+
+            // f32: 增益和钳位与声道无关，整个交错缓冲区可一次性处理。
+            output.update(from: src, count: srcSamples)
+            var g = gain
+            var low: Float = -1.0, high: Float = 1.0
+            let n = vDSP_Length(srcSamples)
+            vDSP_vsmul(output, 1, &g, output, 1, n)
+            vDSP_vclip(output, 1, &low, &high, output, 1, n)
         }
     }
 }

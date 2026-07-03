@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Accelerate
 
 /// 与 Android AudioFormat 编码对应的格式。
 /// 数值来自 Android android.media.AudioFormat：
@@ -36,67 +37,118 @@ enum AudioSampleFormat: UInt32, CaseIterable {
         }
     }
 
-    /// 将交错字节流直接转换为单声道 Float 样本，避免创建中间二维数组。
+    /// 将交错字节流转换为单声道 Float 样本（返回新数组）。
+    /// 优先使用 ``interleavedBytesToMonoFloat(_:channelCount:into:)`` 以复用缓冲区。
     func interleavedBytesToMonoFloat(_ data: Data, channelCount: Int) -> [Float] {
         guard channelCount > 0, data.count >= sampleSize * channelCount else { return [] }
         let totalFrames = data.count / (sampleSize * channelCount)
         var mono = Array(repeating: Float(0), count: totalFrames)
+        interleavedBytesToMonoFloat(data, channelCount: channelCount, into: &mono)
+        return mono
+    }
 
-        switch self {
-        case .u8:
-            for frame in 0..<totalFrames {
-                var sum: Float = 0
-                for ch in 0..<channelCount {
-                    let byte = data[(frame * channelCount + ch) * sampleSize]
-                    sum += Float(Int16(byte) - 128) / 128.0
+    /// 将交错字节流转换为单声道 Float 样本，写入预分配的 buffer。
+    /// 调用方负责确保 mono 的 count == totalFrames。
+    func interleavedBytesToMonoFloat(_ data: Data, channelCount: Int, into mono: inout [Float]) {
+        guard channelCount > 0, data.count >= sampleSize * channelCount else { return }
+        let totalFrames = data.count / (sampleSize * channelCount)
+        guard totalFrames > 0 else { return }
+
+        // 确保 mono 足够大
+        if mono.count < totalFrames {
+            mono = Array(repeating: 0, count: totalFrames)
+        }
+
+        let n = vDSP_Length(totalFrames)
+        var invChan = Float(1.0 / Float(channelCount))
+
+        mono.withUnsafeMutableBufferPointer { monoBuf in
+            guard let dst = monoBuf.baseAddress else { return }
+
+            switch self {
+            case .u8:
+                data.withUnsafeBytes { raw in
+                    guard let src = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                    // u8 → float [0, 255] → [-1, 1]
+                    var scale: Float = 1.0 / 128.0
+                    var offset: Float = -1.0
+                    if channelCount == 1 {
+                        vDSP_vfltu8(src, 1, dst, 1, n)
+                        vDSP_vsmsa(dst, 1, &scale, &offset, dst, 1, n)
+                    } else {
+                        // 逐声道累加到 dst
+                        vDSP_vclr(dst, 1, n)
+                        let temp = UnsafeMutablePointer<Float>.allocate(capacity: totalFrames)
+                        defer { temp.deallocate() }
+                        for ch in 0..<channelCount {
+                            vDSP_vfltu8(src.advanced(by: ch), vDSP_Stride(channelCount), temp, 1, n)
+                            vDSP_vsmsa(temp, 1, &scale, &offset, temp, 1, n)
+                            vDSP_vadd(dst, 1, temp, 1, dst, 1, n)
+                        }
+                        vDSP_vsmul(dst, 1, &invChan, dst, 1, n)
+                    }
                 }
-                mono[frame] = sum / Float(channelCount)
-            }
-        case .i16:
-            data.withUnsafeBytes { raw in
-                let ptr = raw.bindMemory(to: Int16.self)
+            case .i16:
+                data.withUnsafeBytes { raw in
+                    guard let src = raw.bindMemory(to: Int16.self).baseAddress else { return }
+                    if channelCount == 1 {
+                        vDSP_vflt16(src, 1, dst, 1, n)
+                    } else {
+                        vDSP_vclr(dst, 1, n)
+                        let temp = UnsafeMutablePointer<Float>.allocate(capacity: totalFrames)
+                        defer { temp.deallocate() }
+                        for ch in 0..<channelCount {
+                            vDSP_vflt16(src.advanced(by: ch), vDSP_Stride(channelCount), temp, 1, n)
+                            vDSP_vadd(dst, 1, temp, 1, dst, 1, n)
+                        }
+                        vDSP_vsmul(dst, 1, &invChan, dst, 1, n)
+                    }
+                }
+            case .i24:
+                // 24-bit 需逐字节解包，但使用本地变量减少开销。
                 for frame in 0..<totalFrames {
                     var sum: Float = 0
                     for ch in 0..<channelCount {
-                        sum += Float(ptr[frame * channelCount + ch]) / Float(Int16.max)
+                        let offset = (frame * channelCount + ch) * sampleSize
+                        sum += decodeI24(data, offset: offset) / Float(1 << 23)
                     }
-                    mono[frame] = sum / Float(channelCount)
+                    dst[frame] = sum * invChan
                 }
-            }
-        case .i24:
-            for frame in 0..<totalFrames {
-                var sum: Float = 0
-                for ch in 0..<channelCount {
-                    let offset = (frame * channelCount + ch) * sampleSize
-                    sum += decodeI24(data, offset: offset) / Float(1 << 23)
-                }
-                mono[frame] = sum / Float(channelCount)
-            }
-        case .i32:
-            data.withUnsafeBytes { raw in
-                let ptr = raw.bindMemory(to: Int32.self)
-                for frame in 0..<totalFrames {
-                    var sum: Float = 0
-                    for ch in 0..<channelCount {
-                        sum += Float(ptr[frame * channelCount + ch]) / Float(Int32.max)
+            case .i32:
+                data.withUnsafeBytes { raw in
+                    guard let src = raw.bindMemory(to: Int32.self).baseAddress else { return }
+                    if channelCount == 1 {
+                        vDSP_vflt32(src, 1, dst, 1, n)
+                    } else {
+                        vDSP_vclr(dst, 1, n)
+                        let temp = UnsafeMutablePointer<Float>.allocate(capacity: totalFrames)
+                        defer { temp.deallocate() }
+                        for ch in 0..<channelCount {
+                            vDSP_vflt32(src.advanced(by: ch), vDSP_Stride(channelCount), temp, 1, n)
+                            vDSP_vadd(dst, 1, temp, 1, dst, 1, n)
+                        }
+                        vDSP_vsmul(dst, 1, &invChan, dst, 1, n)
                     }
-                    mono[frame] = sum / Float(channelCount)
                 }
-            }
-        case .f32:
-            data.withUnsafeBytes { raw in
-                let ptr = raw.bindMemory(to: Float.self)
-                for frame in 0..<totalFrames {
-                    var sum: Float = 0
-                    for ch in 0..<channelCount {
-                        sum += ptr[frame * channelCount + ch]
+            case .f32:
+                data.withUnsafeBytes { raw in
+                    guard let src = raw.bindMemory(to: Float.self).baseAddress else { return }
+                    if channelCount == 1 {
+                        memcpy(dst, src, totalFrames * MemoryLayout<Float>.size)
+                    } else {
+                        vDSP_vclr(dst, 1, n)
+                        for ch in 0..<channelCount {
+                            // 按 stride 提取单声道并累加
+                            let srcCh = src.advanced(by: ch)
+                            for i in 0..<totalFrames {
+                                dst[i] += srcCh[i * channelCount]
+                            }
+                        }
+                        vDSP_vsmul(dst, 1, &invChan, dst, 1, n)
                     }
-                    mono[frame] = sum / Float(channelCount)
                 }
             }
         }
-
-        return mono
     }
 
     /// 将交错字节流转换为 [-1, 1] 的 Float 平面数组。
@@ -105,24 +157,29 @@ enum AudioSampleFormat: UInt32, CaseIterable {
         guard channelCount > 0, data.count >= sampleSize * channelCount else { return [] }
         let totalFrames = data.count / (sampleSize * channelCount)
         var channels: [[Float]] = Array(repeating: Array(repeating: 0.0, count: totalFrames), count: channelCount)
+        let n = vDSP_Length(totalFrames)
 
         switch self {
         case .u8:
-            for frame in 0..<totalFrames {
+            data.withUnsafeBytes { raw in
+                guard let src = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                var scale: Float = 1.0 / 128.0
+                var offset: Float = -1.0
                 for ch in 0..<channelCount {
-                    let byte = data[(frame * channelCount + ch) * sampleSize]
-                    // Android 8-bit PCM 是无符号，归一化到 [-1, 1]
-                    let sample = Float(Int16(byte) - 128) / 128.0
-                    channels[ch][frame] = sample
+                    channels[ch].withUnsafeMutableBufferPointer { buf in
+                        guard let ptr = buf.baseAddress else { return }
+                        vDSP_vfltu8(src.advanced(by: ch), vDSP_Stride(channelCount), ptr, 1, n)
+                        vDSP_vsmsa(ptr, 1, &scale, &offset, ptr, 1, n)
+                    }
                 }
             }
         case .i16:
             data.withUnsafeBytes { raw in
-                let ptr = raw.bindMemory(to: Int16.self)
-                for frame in 0..<totalFrames {
-                    for ch in 0..<channelCount {
-                        let sample = Float(ptr[frame * channelCount + ch]) / Float(Int16.max)
-                        channels[ch][frame] = sample
+                guard let src = raw.bindMemory(to: Int16.self).baseAddress else { return }
+                for ch in 0..<channelCount {
+                    channels[ch].withUnsafeMutableBufferPointer { buf in
+                        guard let ptr = buf.baseAddress else { return }
+                        vDSP_vflt16(src.advanced(by: ch), vDSP_Stride(channelCount), ptr, 1, n)
                     }
                 }
             }
@@ -130,26 +187,26 @@ enum AudioSampleFormat: UInt32, CaseIterable {
             for frame in 0..<totalFrames {
                 for ch in 0..<channelCount {
                     let offset = (frame * channelCount + ch) * sampleSize
-                    let sample = decodeI24(data, offset: offset) / Float(1 << 23)
-                    channels[ch][frame] = sample
+                    channels[ch][frame] = decodeI24(data, offset: offset) / Float(1 << 23)
                 }
             }
         case .i32:
             data.withUnsafeBytes { raw in
-                let ptr = raw.bindMemory(to: Int32.self)
-                for frame in 0..<totalFrames {
-                    for ch in 0..<channelCount {
-                        let sample = Float(ptr[frame * channelCount + ch]) / Float(Int32.max)
-                        channels[ch][frame] = sample
+                guard let src = raw.bindMemory(to: Int32.self).baseAddress else { return }
+                for ch in 0..<channelCount {
+                    channels[ch].withUnsafeMutableBufferPointer { buf in
+                        guard let ptr = buf.baseAddress else { return }
+                        vDSP_vflt32(src.advanced(by: ch), vDSP_Stride(channelCount), ptr, 1, n)
                     }
                 }
             }
         case .f32:
             data.withUnsafeBytes { raw in
-                let ptr = raw.bindMemory(to: Float.self)
-                for frame in 0..<totalFrames {
-                    for ch in 0..<channelCount {
-                        channels[ch][frame] = ptr[frame * channelCount + ch]
+                guard let src = raw.bindMemory(to: Float.self).baseAddress else { return }
+                for ch in 0..<channelCount {
+                    let srcCh = src.advanced(by: ch)
+                    for frame in 0..<totalFrames {
+                        channels[ch][frame] = srcCh[frame * channelCount]
                     }
                 }
             }
@@ -173,12 +230,23 @@ func mixToMono(_ planar: [[Float]]) -> [Float] {
     guard planar.count > 0 else { return [] }
     let frameCount = planar[0].count
     var mono = Array(repeating: Float(0), count: frameCount)
-    for frame in 0..<frameCount {
-        var sum: Float = 0
+
+    guard frameCount > 0 else { return mono }
+
+    let n = vDSP_Length(frameCount)
+    var invCount = Float(1.0 / Float(planar.count))
+
+    mono.withUnsafeMutableBufferPointer { monoBuf in
+        guard let dst = monoBuf.baseAddress else { return }
+        vDSP_vclr(dst, 1, n)
         for ch in 0..<planar.count {
-            sum += planar[ch][frame]
+            planar[ch].withUnsafeBufferPointer { buf in
+                guard let ptr = buf.baseAddress else { return }
+                vDSP_vadd(dst, 1, ptr, 1, dst, 1, n)
+            }
         }
-        mono[frame] = sum / Float(planar.count)
+        vDSP_vsmul(dst, 1, &invCount, dst, 1, n)
     }
+
     return mono
 }

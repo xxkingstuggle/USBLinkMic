@@ -18,6 +18,7 @@
 		1A0003030000000000000001 /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002030000000000000001 /* AudioPlayer.swift */; };
 		1A0003040000000000000001 /* WaveformData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002040000000000000001 /* WaveformData.swift */; };
 		1A0003050000000000000001 /* ByteRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002050000000000000001 /* ByteRingBuffer.swift */; };
+		1A0003060000000000000001 /* AudioPerfTracer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002060000000000000001 /* AudioPerfTracer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 		1A0002030000000000000001 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
 		1A0002040000000000000001 /* WaveformData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformData.swift; sourceTree = "<group>"; };
 		1A0002050000000000000001 /* ByteRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ByteRingBuffer.swift; sourceTree = "<group>"; };
+		1A0002060000000000000001 /* AudioPerfTracer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPerfTracer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,6 +78,7 @@
 				1A0002030000000000000001 /* AudioPlayer.swift */,
 				1A0002040000000000000001 /* WaveformData.swift */,
 				1A0002050000000000000001 /* ByteRingBuffer.swift */,
+				1A0002060000000000000001 /* AudioPerfTracer.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -170,6 +173,7 @@
 				1A0003030000000000000001 /* AudioPlayer.swift in Sources */,
 				1A0003040000000000000001 /* WaveformData.swift in Sources */,
 				1A0003050000000000000001 /* ByteRingBuffer.swift in Sources */,
+				1A0003060000000000000001 /* AudioPerfTracer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

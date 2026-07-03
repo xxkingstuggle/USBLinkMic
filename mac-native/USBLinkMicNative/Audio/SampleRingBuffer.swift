@@ -1,15 +1,17 @@
 import Foundation
 import AVFoundation
+import os
 
 /// 线程安全环形缓冲区，按块拷贝写入/读取单声道 Float 样本。
 /// 写入发生在 MicReceiver 的 DispatchQueue，读取发生在 AVAudioEngine 的渲染线程。
+/// 使用 os_unfair_lock 避免 NSLock 在实时音频线程上的优先级反转风险。
 final class SampleRingBuffer: @unchecked Sendable {
     private let buffer: UnsafeMutablePointer<Float>
     private let capacity: Int
     private var writeIndex: Int = 0
     private var readIndex: Int = 0
     private var available: Int = 0
-    private let lock = NSLock()
+    private var lock = os_unfair_lock_s()
 
     init(capacity: Int) {
         self.capacity = max(capacity, 1024)
@@ -25,8 +27,8 @@ final class SampleRingBuffer: @unchecked Sendable {
         guard !samples.isEmpty else { return }
         let count = samples.count
 
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
 
         let writable = min(count, capacity)
         var srcOffset = count - writable
@@ -62,8 +64,8 @@ final class SampleRingBuffer: @unchecked Sendable {
 
     /// 读取最多 count 个样本到 dst，返回实际读取数。不足时用 silence 填充。持有锁一次完成块拷贝。
     func read(into dst: inout [Float], count: Int) -> Int {
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
 
         let toRead = min(count, available)
         var dstOffset = 0
@@ -99,16 +101,16 @@ final class SampleRingBuffer: @unchecked Sendable {
     }
 
     func reset() {
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
         writeIndex = 0
         readIndex = 0
         available = 0
     }
 
     var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
         return available
     }
 }

@@ -102,6 +102,8 @@ final class AppModel: ObservableObject {
     private var pendingLogLines: [String] = []
     private var logFlushTask: Task<Void, Never>?
     nonisolated private let waveformQueue = DispatchQueue(label: "USBLinkMic.WaveformUI")
+    /// 预分配的单声道浮点缓冲区，供音频包→波形转换复用，避免每包堆分配。
+    nonisolated(unsafe) private var monoBuffer: [Float] = []
 
     let relayPort = 31416
     let relaySocket = "usblinkmic_net"
@@ -603,10 +605,15 @@ final class AppModel: ObservableObject {
                 self?.appendLog("手机麦克风：\(message)")
             }
         case .packet(let packet):
+            let t0 = perfNow()
             audioPlayer.write(packet: packet)
             if let format = AudioSampleFormat(rawValue: packet.audioFormat) {
-                let mono = format.interleavedBytesToMonoFloat(packet.buffer, channelCount: Int(packet.channelCount))
-                waveformData.append(samples: mono, sampleRate: Double(packet.sampleRate))
+                format.interleavedBytesToMonoFloat(packet.buffer, channelCount: Int(packet.channelCount), into: &monoBuffer)
+                let t1 = perfNow()
+                waveformData.append(samples: monoBuffer, sampleRate: Double(packet.sampleRate))
+                let t2 = perfNow()
+                sharedPerfTracer.record("packet.bytesToMono", nanos: t1 - t0)
+                sharedPerfTracer.record("packet.waveform", nanos: t2 - t1)
                 scheduleWaveformUpdate()
             }
         }
