@@ -38,25 +38,29 @@ enum AudioSampleFormat: UInt32, CaseIterable {
     }
 
     /// 将交错字节流转换为单声道 Float 样本（返回新数组）。
-    /// 优先使用 ``interleavedBytesToMonoFloat(_:channelCount:into:)`` 以复用缓冲区。
+    /// 优先使用 ``interleavedBytesToMonoFloat(_:channelCount:into:workspace:)`` 以复用缓冲区。
     func interleavedBytesToMonoFloat(_ data: Data, channelCount: Int) -> [Float] {
         guard channelCount > 0, data.count >= sampleSize * channelCount else { return [] }
         let totalFrames = data.count / (sampleSize * channelCount)
         var mono = Array(repeating: Float(0), count: totalFrames)
-        interleavedBytesToMonoFloat(data, channelCount: channelCount, into: &mono)
+        var workspace = [Float]()
+        interleavedBytesToMonoFloat(data, channelCount: channelCount, into: &mono, workspace: &workspace)
         return mono
     }
 
-    /// 将交错字节流转换为单声道 Float 样本，写入预分配的 buffer。
+    /// 将交错字节流转换为单声道 Float 样本，写入预分配的 buffer，并使用传入的工作区消除堆分配。
     /// 调用方负责确保 mono 的 count == totalFrames。
-    func interleavedBytesToMonoFloat(_ data: Data, channelCount: Int, into mono: inout [Float]) {
+    func interleavedBytesToMonoFloat(_ data: Data, channelCount: Int, into mono: inout [Float], workspace: inout [Float]) {
         guard channelCount > 0, data.count >= sampleSize * channelCount else { return }
         let totalFrames = data.count / (sampleSize * channelCount)
         guard totalFrames > 0 else { return }
 
-        // 确保 mono 足够大
+        // 确保 mono 和 workspace 足够大
         if mono.count < totalFrames {
             mono = Array(repeating: 0, count: totalFrames)
+        }
+        if workspace.count < totalFrames {
+            workspace = Array(repeating: 0, count: totalFrames)
         }
 
         let n = vDSP_Length(totalFrames)
@@ -78,12 +82,13 @@ enum AudioSampleFormat: UInt32, CaseIterable {
                     } else {
                         // 逐声道累加到 dst
                         vDSP_vclr(dst, 1, n)
-                        let temp = UnsafeMutablePointer<Float>.allocate(capacity: totalFrames)
-                        defer { temp.deallocate() }
-                        for ch in 0..<channelCount {
-                            vDSP_vfltu8(src.advanced(by: ch), vDSP_Stride(channelCount), temp, 1, n)
-                            vDSP_vsmsa(temp, 1, &scale, &offset, temp, 1, n)
-                            vDSP_vadd(dst, 1, temp, 1, dst, 1, n)
+                        workspace.withUnsafeMutableBufferPointer { wsBuf in
+                            guard let temp = wsBuf.baseAddress else { return }
+                            for ch in 0..<channelCount {
+                                vDSP_vfltu8(src.advanced(by: ch), vDSP_Stride(channelCount), temp, 1, n)
+                                vDSP_vsmsa(temp, 1, &scale, &offset, temp, 1, n)
+                                vDSP_vadd(dst, 1, temp, 1, dst, 1, n)
+                            }
                         }
                         vDSP_vsmul(dst, 1, &invChan, dst, 1, n)
                     }
@@ -95,11 +100,12 @@ enum AudioSampleFormat: UInt32, CaseIterable {
                         vDSP_vflt16(src, 1, dst, 1, n)
                     } else {
                         vDSP_vclr(dst, 1, n)
-                        let temp = UnsafeMutablePointer<Float>.allocate(capacity: totalFrames)
-                        defer { temp.deallocate() }
-                        for ch in 0..<channelCount {
-                            vDSP_vflt16(src.advanced(by: ch), vDSP_Stride(channelCount), temp, 1, n)
-                            vDSP_vadd(dst, 1, temp, 1, dst, 1, n)
+                        workspace.withUnsafeMutableBufferPointer { wsBuf in
+                            guard let temp = wsBuf.baseAddress else { return }
+                            for ch in 0..<channelCount {
+                                vDSP_vflt16(src.advanced(by: ch), vDSP_Stride(channelCount), temp, 1, n)
+                                vDSP_vadd(dst, 1, temp, 1, dst, 1, n)
+                            }
                         }
                         vDSP_vsmul(dst, 1, &invChan, dst, 1, n)
                     }
@@ -121,11 +127,12 @@ enum AudioSampleFormat: UInt32, CaseIterable {
                         vDSP_vflt32(src, 1, dst, 1, n)
                     } else {
                         vDSP_vclr(dst, 1, n)
-                        let temp = UnsafeMutablePointer<Float>.allocate(capacity: totalFrames)
-                        defer { temp.deallocate() }
-                        for ch in 0..<channelCount {
-                            vDSP_vflt32(src.advanced(by: ch), vDSP_Stride(channelCount), temp, 1, n)
-                            vDSP_vadd(dst, 1, temp, 1, dst, 1, n)
+                        workspace.withUnsafeMutableBufferPointer { wsBuf in
+                            guard let temp = wsBuf.baseAddress else { return }
+                            for ch in 0..<channelCount {
+                                vDSP_vflt32(src.advanced(by: ch), vDSP_Stride(channelCount), temp, 1, n)
+                                vDSP_vadd(dst, 1, temp, 1, dst, 1, n)
+                            }
                         }
                         vDSP_vsmul(dst, 1, &invChan, dst, 1, n)
                     }

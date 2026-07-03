@@ -104,6 +104,8 @@ final class AppModel: ObservableObject {
     nonisolated private let waveformQueue = DispatchQueue(label: "USBLinkMic.WaveformUI")
     /// 预分配的单声道浮点缓冲区，供音频包→波形转换复用，避免每包堆分配。
     nonisolated(unsafe) private var monoBuffer: [Float] = []
+    /// 预分配的工作区缓冲区，供解码器格式转换复用，避免多声道模式下每包堆分配。
+    nonisolated(unsafe) private var formatWorkspace: [Float] = []
 
     let relayPort = 31416
     let relaySocket = "usblinkmic_net"
@@ -608,7 +610,7 @@ final class AppModel: ObservableObject {
             let t0 = perfNow()
             audioPlayer.write(packet: packet)
             if let format = AudioSampleFormat(rawValue: packet.audioFormat) {
-                format.interleavedBytesToMonoFloat(packet.buffer, channelCount: Int(packet.channelCount), into: &monoBuffer)
+                format.interleavedBytesToMonoFloat(packet.buffer, channelCount: Int(packet.channelCount), into: &monoBuffer, workspace: &formatWorkspace)
                 let t1 = perfNow()
                 waveformData.append(samples: monoBuffer, sampleRate: Double(packet.sampleRate))
                 let t2 = perfNow()

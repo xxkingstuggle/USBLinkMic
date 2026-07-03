@@ -143,6 +143,13 @@ final class AudioPlayer: @unchecked Sendable {
         let capacity = Int(sampleRate) * frameBytes
         self.ringBuffer = ByteRingBuffer(capacity: max(capacity, 4096))
         self.audioUnit = unit
+
+        // 预分配常用缓冲区，避免渲染线程发生堆分配。
+        // MacOS 上常规音频帧大小通常是 512 到 4096 帧之间。
+        let maxFramesPerRender = 8192
+        self.readBuffer = Array(repeating: UInt8(0), count: maxFramesPerRender * self.frameBytes)
+        self.floatWorkspace = Array(repeating: Float(0), count: maxFramesPerRender * self.channelCount)
+        self.i32Workspace = Array(repeating: Int32(0), count: maxFramesPerRender * self.channelCount)
     }
 
     func stop() {
