@@ -9,6 +9,7 @@ final class AudioPerfTracer: @unchecked Sendable {
     private var records: [String: Record] = [:]
     private var reportCounter: Int = 0
     private let reportInterval = 100  // 每 100 次采样输出一次
+    private let maxLogFileSize: UInt64 = 512 * 1024  // 512 KB 上限
     private let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("usblinkmic_perf.log")
 
     private struct Record {
@@ -52,10 +53,23 @@ final class AudioPerfTracer: @unchecked Sendable {
         }
         let report = lines.joined(separator: "\n") + "\n---\n"
         if let data = report.data(using: .utf8) {
+            // 限制日志文件大小，防止长期运行无限制增长。
             if let fh = try? FileHandle(forWritingTo: tempURL) {
-                fh.seekToEndOfFile()
-                fh.write(data)
-                fh.closeFile()
+                let currentSize = try? fh.seekToEnd()
+                if let currentSize, currentSize > maxLogFileSize {
+                    // 截断：只保留后半部分
+                    let keepSize = maxLogFileSize / 2
+                    fh.closeFile()
+                    if let existing = try? Data(contentsOf: tempURL), existing.count > keepSize {
+                        let trimmed = existing.suffix(Int(keepSize))
+                        try? trimmed.write(to: tempURL)
+                    }
+                }
+                if let fh = try? FileHandle(forWritingTo: tempURL) {
+                    fh.seekToEndOfFile()
+                    fh.write(data)
+                    fh.closeFile()
+                }
             } else {
                 try? report.write(to: tempURL, atomically: false, encoding: .utf8)
             }

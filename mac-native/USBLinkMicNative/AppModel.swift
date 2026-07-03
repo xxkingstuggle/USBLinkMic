@@ -923,15 +923,21 @@ final class MicReceiver: @unchecked Sendable {
         byteCount = 0
     }
 
+    private func removeConnection(_ connection: NWConnection) {
+        connections.removeAll { $0 === connection }
+    }
+
     private func accept(_ connection: NWConnection, onEvent: @escaping @Sendable (MicReceiverEvent) -> Void) {
         connections.append(connection)
         onEvent(.status("手机已连接，等待握手"))
-        connection.stateUpdateHandler = { state in
+        connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .failed(let error):
                 onEvent(.status("连接异常：\(error.localizedDescription)"))
+                self?.removeConnection(connection)
             case .cancelled:
                 onEvent(.status("连接已关闭"))
+                self?.removeConnection(connection)
             default:
                 break
             }

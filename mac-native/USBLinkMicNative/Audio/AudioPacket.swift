@@ -58,9 +58,8 @@ func decodeAudioPacketMessage(_ data: Data) throws -> AudioPacketMessage {
             guard length <= UInt32(data.count - i) else { throw AudioPacketError.truncated }
             let start = i
             let end = i + Int(length)
-            let fieldData = data[start..<end]
             switch fieldNumber {
-            case 1: result.buffer = Data(fieldData)
+            case 1: result.buffer = data[start..<end]
             default: break
             }
             i = end
