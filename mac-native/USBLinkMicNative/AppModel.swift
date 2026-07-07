@@ -311,8 +311,12 @@ final class AppModel: ObservableObject {
         // 如果已经是 NCM，不再重复下发 setFunctions，避免 ADB 断开的误报。
         if before.lowercased().contains("ncm") {
             await enablePhoneToMacNetworkService()
+
+        appendLog("手机网络给 Mac：强制安卓默认使用 CDC-NCM…")
+        _ = await adb(["-s", serial, "shell", "settings", "put", "global", "tether_force_usb_functions", "1"])
+
             await refreshNetworkWithRetry()
-            if network.ip != "-" || network.usbFunction.lowercased().contains("ncm") {
+            if network.ip != "-" {
                 phoneToMacState = .running
                 appendLog("手机网络给 Mac 已在运行：\(network.ip) / \(network.router)")
             } else {
@@ -326,30 +330,28 @@ final class AppModel: ObservableObject {
             previousUsbFunctionBeforeNcm = before
         }
 
-        // 先把 Mac 侧的网络服务启用，等 NCM 上来后 DHCP 才能拿到地址。
+        // 先把 Mac 侧的网络服务启用，等 USB 网卡上来后 DHCP 才能拿到地址。
         await enablePhoneToMacNetworkService()
 
-        appendLog("手机网络给 Mac：请求切换到 NCM…")
-        let started = await setUsbFunctionExpectingDisconnect(serial: serial, function: "ncm")
-        if !started {
-            phoneToMacState = .failed("ADB 未发起 CDC-NCM 切换")
-            appendLog("手机网络给 Mac 启动失败：ADB 未发起切换")
+        appendLog("手机网络给 Mac：强制安卓默认使用 CDC-NCM…")
+        _ = await adb(["-s", serial, "shell", "settings", "put", "global", "tether_force_usb_functions", "1"])
+
+
+        if await startUsbTetherFunction(serial: serial, function: "ncm", label: "CDC-NCM") {
+            phoneToMacState = .running
+            appendLog("手机网络给 Mac 已启动：\(network.ip) / \(network.router)")
             return
         }
 
-        // 等 USB gadget 重置、ADB 重连、Mac DHCP 拿地址。
-        try? await Task.sleep(for: .seconds(5))
-        await refreshNetworkWithRetry()
-
-        // 只要 USB function 是 NCM 或 Mac 已经拿到手机网段的 IP，就认为成功。
-        let usbIsNcm = network.usbFunction.lowercased().contains("ncm")
-        if usbIsNcm || network.ip != "-" {
+        if let serial = await selectedSerial(),
+           await startUsbTetherFunction(serial: serial, function: "rndis", label: "RNDIS") {
             phoneToMacState = .running
             appendLog("手机网络给 Mac 已启动：\(network.ip) / \(network.router)")
-        } else {
-            phoneToMacState = .failed("CDC-NCM 未拿到 IP")
-            appendLog("手机网络给 Mac：未检测到 NCM 或 IP")
+            return
         }
+
+        phoneToMacState = .failed("USB 网卡未拿到 IP")
+        appendLog("手机网络给 Mac：CDC-NCM/RNDIS 均未拿到 IP")
     }
 
     private func stopPhoneToMac() async {
@@ -369,14 +371,17 @@ final class AppModel: ObservableObject {
         }
 
         let before = await currentUsbFunction(serial: serial)
-        if !before.lowercased().contains("ncm") {
-            // 已经不是 NCM，不需要再发 setFunctions。
+        let lowerBefore = before.lowercased()
+        if !lowerBefore.contains("ncm") && !lowerBefore.contains("rndis") {
+            // 已经不是 USB 网卡模式，不需要再发 setFunctions。
             previousUsbFunctionBeforeNcm = nil
             await refreshNetworkWithRetry()
             phoneToMacState = .off
             appendLog("手机网络给 Mac 已停止")
             return
         }
+
+        _ = await adb(["-s", serial, "shell", "settings", "delete", "global", "tether_force_usb_functions"])
 
         let target = restoreUsbFunction()
         appendLog("手机网络给 Mac：请求从 NCM 恢复到 \(target)…")
@@ -389,6 +394,32 @@ final class AppModel: ObservableObject {
         await refreshNetworkWithRetry()
         phoneToMacState = .off
         appendLog("手机网络给 Mac 已停止")
+    }
+
+    private func startUsbTetherFunction(serial: String, function: String, label: String) async -> Bool {
+        appendLog("手机网络给 Mac：请求切换到 \(label)…")
+        let started = await setUsbFunctionExpectingDisconnect(serial: serial, function: function)
+        if !started {
+            appendLog("手机网络给 Mac：\(label) 切换命令未成功下发")
+            return false
+        }
+
+        // 等 USB gadget 重置、macOS 重新枚举网络硬件、DHCP 拿地址。
+        try? await Task.sleep(for: .seconds(5))
+        await refreshMacNetworkHardware()
+        await enablePhoneToMacNetworkService()
+
+        appendLog("手机网络给 Mac：强制安卓默认使用 CDC-NCM…")
+        _ = await adb(["-s", serial, "shell", "settings", "put", "global", "tether_force_usb_functions", "1"])
+
+        await refreshNetworkWithRetry()
+
+        if network.ip != "-" {
+            return true
+        }
+
+        appendLog("手机网络给 Mac：\(label) 已尝试，未拿到 IP")
+        return false
     }
 
     private func startMacToPhone() async {
@@ -439,9 +470,8 @@ final class AppModel: ObservableObject {
     private func refreshNetworkWithRetry(maxAttempts: Int = 3) async {
         for attempt in 1...maxAttempts {
             await refreshNetwork()
-            let usbIsNcm = network.usbFunction.lowercased().contains("ncm")
             let hasIp = network.ip != "-"
-            if usbIsNcm || hasIp {
+            if hasIp {
                 return
             }
             if attempt < maxAttempts {
@@ -468,8 +498,9 @@ final class AppModel: ObservableObject {
             let router = parseValue(info, prefix: "Router:") ?? "-"
             let lower = port.name.lowercased()
             let looksPhone = ["android", "redmi", "xiaomi", "pixel", "samsung", "huawei", "honor", "oppo", "vivo", "realme", "oneplus", "motorola", "nothing"].contains { lower.contains($0) }
+            let looksUsbEthernet = lower == "ethernet adapter"
             let privateRouter = router.hasPrefix("10.") || router.hasPrefix("192.168.") || router.hasPrefix("172.")
-            if looksPhone || privateRouter {
+            if looksPhone || looksUsbEthernet || privateRouter {
                 best.service = port.name
                 best.device = port.device
                 best.ip = ip
@@ -484,9 +515,8 @@ final class AppModel: ObservableObject {
         // 当用户正在手动切换 CDC-NCM 时，不拿检测结果覆盖开关状态，
         // 避免开关弹回，造成“假开关”的感觉。
         if !phoneToMacOperationInProgress {
-            let usbIsNcm = best.usbFunction.lowercased().contains("ncm")
             let hasPhoneIp = best.ip != "-"
-            phoneToMacState = (usbIsNcm || hasPhoneIp) ? .running : .off
+            phoneToMacState = hasPhoneIp ? .running : .off
         }
     }
 
@@ -535,10 +565,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func refreshMacNetworkHardware() async {
+        _ = await Shell.runPath("networksetup", ["-detectnewhardware"])
+    }
+
     private func isPhoneLikeServiceName(_ name: String) -> Bool {
         let lower = name.lowercased()
         return ["android", "redmi", "xiaomi", "pixel", "samsung", "huawei", "honor",
-                "oppo", "vivo", "realme", "oneplus", "motorola", "nothing", "ncm"]
+                "oppo", "vivo", "realme", "oneplus", "motorola", "nothing", "ncm",
+                "ethernet adapter"]
             .contains { lower.contains($0) }
     }
 
