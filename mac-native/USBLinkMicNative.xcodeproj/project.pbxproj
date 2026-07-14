@@ -11,6 +11,9 @@
 		1A0000110000000000000001 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000020000000000000001 /* AppModel.swift */; };
 		1A0000120000000000000001 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000030000000000000001 /* MainView.swift */; };
 		1A0000130000000000000001 /* Shell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000040000000000000001 /* Shell.swift */; };
+		1A0000140000000000000001 /* GnirehtetRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000050000000000000001 /* GnirehtetRelay.swift */; };
+		1A0000150000000000000001 /* gnirehtet-relay in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000060000000000000001 /* gnirehtet-relay */; };
+		1A0000160000000000000001 /* GNIREHTET_LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000070000000000000001 /* GNIREHTET_LICENSE.txt */; };
 		E0E23641D508E5D7B11EAE63 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6B2EB24124822B1AA71703F9 /* Assets.xcassets */; };
 		1A0003000000000000000001 /* AudioPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002000000000000000001 /* AudioPacket.swift */; };
 		1A0003010000000000000001 /* AudioFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002010000000000000001 /* AudioFormat.swift */; };
@@ -26,6 +29,9 @@
 		1A0000020000000000000001 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		1A0000030000000000000001 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		1A0000040000000000000001 /* Shell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shell.swift; sourceTree = "<group>"; };
+		1A0000050000000000000001 /* GnirehtetRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GnirehtetRelay.swift; sourceTree = "<group>"; };
+		1A0000060000000000000001 /* gnirehtet-relay */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = "gnirehtet-relay"; sourceTree = "<group>"; };
+		1A0000070000000000000001 /* GNIREHTET_LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = GNIREHTET_LICENSE.txt; sourceTree = "<group>"; };
 		1A0000200000000000000001 /* USB LinkMic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "USB LinkMic.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6B2EB24124822B1AA71703F9 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = USBLinkMicNative/Assets.xcassets; sourceTree = "<group>"; };
 		1A0002000000000000000001 /* AudioPacket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPacket.swift; sourceTree = "<group>"; };
@@ -64,7 +70,9 @@
 				1A0000020000000000000001 /* AppModel.swift */,
 				1A0000030000000000000001 /* MainView.swift */,
 				1A0000040000000000000001 /* Shell.swift */,
+				1A0000050000000000000001 /* GnirehtetRelay.swift */,
 				1A0002100000000000000001 /* Audio */,
+				1A0002200000000000000001 /* Resources */,
 			);
 			path = USBLinkMicNative;
 			sourceTree = "<group>";
@@ -81,6 +89,15 @@
 				1A0002060000000000000001 /* AudioPerfTracer.swift */,
 			);
 			path = Audio;
+			sourceTree = "<group>";
+		};
+		1A0002200000000000000001 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000060000000000000001 /* gnirehtet-relay */,
+				1A0000070000000000000001 /* GNIREHTET_LICENSE.txt */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 
@@ -153,6 +170,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				E0E23641D508E5D7B11EAE63 /* Assets.xcassets in Resources */,
+				1A0000150000000000000001 /* gnirehtet-relay in Resources */,
+				1A0000160000000000000001 /* GNIREHTET_LICENSE.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -167,6 +186,7 @@
 				1A0000110000000000000001 /* AppModel.swift in Sources */,
 				1A0000120000000000000001 /* MainView.swift in Sources */,
 				1A0000130000000000000001 /* Shell.swift in Sources */,
+				1A0000140000000000000001 /* GnirehtetRelay.swift in Sources */,
 				1A0003000000000000000001 /* AudioPacket.swift in Sources */,
 				1A0003010000000000000001 /* AudioFormat.swift in Sources */,
 				1A0003020000000000000001 /* SampleRingBuffer.swift in Sources */,

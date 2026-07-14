@@ -394,10 +394,13 @@ final class AudioPlayer: @unchecked Sendable {
 
                 floatWorkspace.withUnsafeMutableBufferPointer { buf in
                     guard let ws = buf.baseAddress else { return }
-                    // Int16 → Float (divides by 32768)
+                    // Int16 → normalized Float. vDSP_vflt16 itself does not normalize.
                     vDSP_vflt16(src, 1, ws, 1, n)
+                    var normalize = Float(1.0 / 32768.0)
+                    vDSP_vsmul(ws, 1, &normalize, ws, 1, n)
                     applyGainAndMute(ws, count: srcSamples)
-                    // Float → Int16
+                    var denormalize = Float(32767.0)
+                    vDSP_vsmul(ws, 1, &denormalize, ws, 1, n)
                     vDSP_vfixr16(ws, 1, output, 1, n)
                 }
             }
@@ -411,10 +414,12 @@ final class AudioPlayer: @unchecked Sendable {
                     let n = vDSP_Length(framesPerChannel)
                     floatWorkspace.withUnsafeMutableBufferPointer { buf in
                         guard let ws = buf.baseAddress else { return }
-                        // 从交错源按 stride 读取
                         vDSP_vflt16(src.advanced(by: ch), vDSP_Stride(channelCount), ws, 1, n)
+                        var normalize = Float(1.0 / 32768.0)
+                        vDSP_vsmul(ws, 1, &normalize, ws, 1, n)
                         applyGainAndMute(ws, count: framesPerChannel)
-                        // 写回交错输出
+                        var denormalize = Float(32767.0)
+                        vDSP_vsmul(ws, 1, &denormalize, ws, 1, n)
                         vDSP_vfixr16(ws, 1, output.advanced(by: ch), vDSP_Stride(channelCount), n)
                     }
                 }
@@ -459,12 +464,14 @@ final class AudioPlayer: @unchecked Sendable {
         if channelCount == 1 {
             let n = vDSP_Length(srcSamples)
             i32Workspace.withUnsafeBufferPointer { i32Buf in
-                guard let i32Ptr = i32Buf.baseAddress else { return }
-                floatWorkspace.withUnsafeMutableBufferPointer { buf in
-                    guard let ws = buf.baseAddress else { return }
-                    vDSP_vflt32(i32Ptr, 1, ws, 1, n)
-                    applyGainAndMute(ws, count: srcSamples)
-                    output.update(from: ws, count: srcSamples)
+                    guard let i32Ptr = i32Buf.baseAddress else { return }
+                    floatWorkspace.withUnsafeMutableBufferPointer { buf in
+                        guard let ws = buf.baseAddress else { return }
+                        vDSP_vflt32(i32Ptr, 1, ws, 1, n)
+                        var normalize = Float(1.0 / 8_388_608.0)
+                        vDSP_vsmul(ws, 1, &normalize, ws, 1, n)
+                        applyGainAndMute(ws, count: srcSamples)
+                        output.update(from: ws, count: srcSamples)
                 }
             }
         } else {
@@ -475,8 +482,9 @@ final class AudioPlayer: @unchecked Sendable {
                     let n = vDSP_Length(srcFrames)
                     floatWorkspace.withUnsafeMutableBufferPointer { buf in
                         guard let ws = buf.baseAddress else { return }
-                        // 用 stride 从交错 Int32 中提取声道 ch
                         vDSP_vflt32(i32Ptr.advanced(by: ch), vDSP_Stride(channelCount), ws, 1, n)
+                        var normalize = Float(1.0 / 8_388_608.0)
+                        vDSP_vsmul(ws, 1, &normalize, ws, 1, n)
                         applyGainAndMute(ws, count: srcFrames)
                         // 写入交错 f32 输出
                         var dstIdx = ch
@@ -510,10 +518,12 @@ final class AudioPlayer: @unchecked Sendable {
 
                 floatWorkspace.withUnsafeMutableBufferPointer { buf in
                     guard let ws = buf.baseAddress else { return }
-                    // Int32 → Float (divides by 2^31)
                     vDSP_vflt32(src, 1, ws, 1, n)
+                    var normalize = Float(1.0 / 2_147_483_648.0)
+                    vDSP_vsmul(ws, 1, &normalize, ws, 1, n)
                     applyGainAndMute(ws, count: srcSamples)
-                    // Float → Int32
+                    var denormalize = Float(2_147_483_647.0)
+                    vDSP_vsmul(ws, 1, &denormalize, ws, 1, n)
                     vDSP_vfixr32(ws, 1, output, 1, n)
                 }
             }
@@ -528,7 +538,11 @@ final class AudioPlayer: @unchecked Sendable {
                     floatWorkspace.withUnsafeMutableBufferPointer { buf in
                         guard let ws = buf.baseAddress else { return }
                         vDSP_vflt32(src.advanced(by: ch), vDSP_Stride(channelCount), ws, 1, n)
+                        var normalize = Float(1.0 / 2_147_483_648.0)
+                        vDSP_vsmul(ws, 1, &normalize, ws, 1, n)
                         applyGainAndMute(ws, count: framesPerChannel)
+                        var denormalize = Float(2_147_483_647.0)
+                        vDSP_vsmul(ws, 1, &denormalize, ws, 1, n)
                         vDSP_vfixr32(ws, 1, output.advanced(by: ch), vDSP_Stride(channelCount), n)
                     }
                 }

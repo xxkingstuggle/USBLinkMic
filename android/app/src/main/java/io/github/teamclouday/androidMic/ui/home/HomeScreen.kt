@@ -140,18 +140,45 @@ fun HomeScreen(vm: MainViewModel, requestPermissions: (() -> Unit) -> Unit) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.SwapHoriz, null, tint = if (vm.isNetworkStarted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(
+                            Icons.Outlined.SwapHoriz,
+                            null,
+                            tint = if (vm.isNetworkStarted || vm.isNetworkConnecting) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text("Mac 网络给手机", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("ADB VPN 反向转发", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("由 Mac 控制 · ADB VPN", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Switch(checked = vm.isNetworkStarted, onCheckedChange = { if (it) vm.startNetworkShare() else vm.stopNetworkShare() })
+                        Icon(
+                            when {
+                                vm.isNetworkStarted -> Icons.Filled.CheckCircle
+                                vm.isNetworkConnecting -> Icons.Filled.Sync
+                                else -> Icons.Outlined.Circle
+                            },
+                            contentDescription = null,
+                            tint = if (vm.isNetworkStarted || vm.isNetworkConnecting) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            }
+                        )
                     }
-                    if (vm.isNetworkStarted) {
-                        HorizontalDivider()
-                        Text("relay tcp:31416 · usblinkmic_net", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    HorizontalDivider()
+                    Text(vm.macToPhoneStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (vm.isNetworkStarted) {
+                            "relay tcp:31416 · usblinkmic_net"
+                        } else {
+                            "请在 Mac 端 USB LinkMic 打开“Mac 网络给手机”"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 

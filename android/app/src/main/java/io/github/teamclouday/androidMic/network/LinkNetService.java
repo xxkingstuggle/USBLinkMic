@@ -37,6 +37,11 @@ import java.util.List;
 public class LinkNetService extends VpnService {
 
     public static final boolean VERBOSE = false;
+    public static final int STATE_STOPPED = 0;
+    public static final int STATE_CONNECTING = 1;
+    public static final int STATE_CONNECTED = 2;
+
+    private static volatile int connectionState = STATE_STOPPED;
 
     private static final String ACTION_START_VPN = "io.github.teamclouday.androidMic.network.START_VPN";
     private static final String ACTION_CLOSE_VPN = "io.github.teamclouday.androidMic.network.CLOSE_VPN";
@@ -75,6 +80,10 @@ public class LinkNetService extends VpnService {
         return intent;
     }
 
+    public static int getConnectionState() {
+        return connectionState;
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent.getAction();
@@ -100,10 +109,12 @@ public class LinkNetService extends VpnService {
     }
 
     private void startVpn(VpnConfiguration config) {
+        connectionState = STATE_CONNECTING;
         notifier.start();
         if (setupVpn(config)) {
             startForwarding();
         } else {
+            connectionState = STATE_STOPPED;
             notifier.stop();
             stopSelf();
         }
@@ -190,6 +201,7 @@ public class LinkNetService extends VpnService {
     }
 
     private void closeVpnResources() {
+        connectionState = STATE_STOPPED;
         notifier.stop();
 
         try {
@@ -230,10 +242,12 @@ public class LinkNetService extends VpnService {
             switch (message.what) {
                 case RelayTunnelListener.MSG_RELAY_TUNNEL_CONNECTED:
                     Log.d(TAG, "Relay tunnel connected");
+                    connectionState = STATE_CONNECTED;
                     vpnService.notifier.setFailure(false);
                     break;
                 case RelayTunnelListener.MSG_RELAY_TUNNEL_DISCONNECTED:
                     Log.d(TAG, "Relay tunnel disconnected");
+                    connectionState = STATE_CONNECTING;
                     vpnService.notifier.setFailure(true);
                     break;
                 default:

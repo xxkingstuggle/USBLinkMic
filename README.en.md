@@ -32,11 +32,14 @@ This feature depends on whether the Android device/ROM allows `svc usb setFuncti
 
 ### Mac Network to Phone
 
+- The Mac app bundles and starts the official gnirehtet v2.5.1 Rust relay, so users do not need to install a separate relay.
 - The Mac app creates `adb reverse localabstract:usblinkmic_net tcp:31416`.
 - Android starts a VPN service and routes selected traffic/DNS through the Mac relay.
 - Default DNS is `8.8.8.8`; default route is `0.0.0.0/0`. Both are configurable in the Mac app.
 
 The first start requires Android VPN authorization.
+
+The gnirehtet upstream source, pinned-version record, and Apache-2.0 license are in `third_party/gnirehtet/`. Rebuild the relay bundled with the Mac app from the included source by running `scripts/build-gnirehtet-relay.sh`.
 
 ## Downloads
 
@@ -91,6 +94,8 @@ Wi-Fi TCP mode:
 macOS:
 
 ```sh
+./scripts/build-gnirehtet-relay.sh
+
 xcodebuild \
   -project mac-native/USBLinkMicNative.xcodeproj \
   -scheme USBLinkMicNative \

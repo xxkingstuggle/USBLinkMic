@@ -117,6 +117,7 @@ final class AppModel: ObservableObject {
     let micService = "io.github.teamclouday.androidMic.domain.service.ForegroundService"
     let networkActivity = "io.github.teamclouday.androidMic.network.LinkNetActivity"
     private let micReceiver = MicReceiver()
+    private let networkRelay = GnirehtetRelay()
     nonisolated private let audioPlayer = AudioPlayer()
     nonisolated private let waveformData = WaveformData(capacity: 160)
     private let defaults = UserDefaults.standard
@@ -185,6 +186,10 @@ final class AppModel: ObservableObject {
         await stopMacToPhone()
         await stopPhoneToMac()
         appendLog("全部模块已请求停止")
+    }
+
+    func stopRelayForTermination() {
+        networkRelay.stop()
     }
 
     private func startMic() async {
@@ -300,6 +305,10 @@ final class AppModel: ObservableObject {
     }
 
     private func startPhoneToMac() async {
+        if macToPhoneState.isOn {
+            appendLog("网络方向切换：先停止 Mac 网络给手机，避免形成路由回环")
+            await stopMacToPhone()
+        }
         phoneToMacOperationInProgress = true
         phoneToMacState = .starting
         defer { phoneToMacOperationInProgress = false }
@@ -424,12 +433,33 @@ final class AppModel: ObservableObject {
     }
 
     private func startMacToPhone() async {
+        if phoneToMacState.isOn {
+            appendLog("网络方向切换：先停止手机网络给 Mac，恢复 Mac 自身上网出口")
+            await stopPhoneToMac()
+        }
         macToPhoneState = .starting
         guard let serial = await selectedSerial() else {
             macToPhoneState = .failed("未检测到 ADB 设备")
             return
         }
+
+        appendLog("Mac 网络给手机：启动内置 gnirehtet relay tcp:\(relayPort)…")
+        do {
+            try await networkRelay.start(port: relayPort)
+        } catch {
+            macToPhoneState = .failed(error.localizedDescription)
+            appendLog("Mac 网络给手机：relay 启动失败：\(error.localizedDescription)")
+            return
+        }
+
         let reverse = await adb(["-s", serial, "reverse", "localabstract:\(relaySocket)", "tcp:\(relayPort)"])
+        guard reverse.status == 0 else {
+            networkRelay.stop()
+            macToPhoneState = .failed(reverse.mergedOutput)
+            appendLog("Mac 网络给手机：ADB reverse 失败\(formatShellDetail(reverse))")
+            return
+        }
+
         let start = await adb([
             "-s", serial, "shell", "am", "start",
             "-a", "com.zjx.usblinkmic.START_NETWORK",
@@ -437,11 +467,16 @@ final class AppModel: ObservableObject {
             "--esa", "dnsServers", dnsServers,
             "--esa", "routes", routes
         ])
-        if reverse.status == 0 && start.status == 0 {
+
+        if start.status == 0 && networkRelay.isRunning {
             macToPhoneState = .running
-            appendLog("Mac 网络给手机已请求启动")
+            appendLog("Mac 网络给手机已启动：gnirehtet relay tcp:\(relayPort)")
         } else {
-            macToPhoneState = .failed([reverse.mergedOutput, start.mergedOutput].joined(separator: "\n"))
+            _ = await adb(["-s", serial, "reverse", "--remove", "localabstract:\(relaySocket)"])
+            networkRelay.stop()
+            let detail = start.status == 0 ? "gnirehtet relay 意外退出" : start.mergedOutput
+            macToPhoneState = .failed(detail)
+            appendLog("Mac 网络给手机启动失败：\(detail)")
         }
         await refreshAdb()
     }
@@ -456,6 +491,7 @@ final class AppModel: ObservableObject {
             ])
             _ = await adb(["-s", serial, "reverse", "--remove", "localabstract:\(relaySocket)"])
         }
+        networkRelay.stop()
         macToPhoneState = .off
         appendLog("Mac 网络给手机已停止")
         await refreshAdb()

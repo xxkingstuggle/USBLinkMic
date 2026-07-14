@@ -674,19 +674,29 @@ private struct WaveformView: View {
                 return
             }
 
-            let count = CGFloat(samples.count)
-            let step = size.width / count
-            // 将波形绘制为连续填充路径，而不是大量独立矩形，显著降低渲染开销。
+            context.stroke(
+                Path { $0.move(to: CGPoint(x: 0, y: mid)); $0.addLine(to: CGPoint(x: size.width, y: mid)) },
+                with: .color(.secondary.opacity(0.22)),
+                lineWidth: 1
+            )
+
+            let step = samples.count > 1 ? size.width / CGFloat(samples.count - 1) : 0
+            let verticalScale = maxHeight * 0.92
             var path = Path()
-            path.move(to: CGPoint(x: 0, y: mid))
             for (index, (_, maxVal)) in samples.enumerated() {
                 let x = CGFloat(index) * step
-                let y = mid - CGFloat(maxVal) * maxHeight * 1.5
-                path.addLine(to: CGPoint(x: x, y: y))
+                let value = min(max(CGFloat(maxVal.isFinite ? maxVal : 0), -1), 1)
+                let point = CGPoint(x: x, y: mid - value * verticalScale)
+                if index == 0 {
+                    path.move(to: point)
+                } else {
+                    path.addLine(to: point)
+                }
             }
             for (index, (minVal, _)) in samples.enumerated().reversed() {
                 let x = CGFloat(index) * step
-                let y = mid - CGFloat(minVal) * maxHeight * 1.5
+                let value = min(max(CGFloat(minVal.isFinite ? minVal : 0), -1), 1)
+                let y = mid - value * verticalScale
                 path.addLine(to: CGPoint(x: x, y: y))
             }
             path.closeSubpath()

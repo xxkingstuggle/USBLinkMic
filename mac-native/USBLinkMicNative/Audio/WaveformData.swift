@@ -38,6 +38,10 @@ final class WaveformData: @unchecked Sendable {
                 vDSP_minv(ptr, 1, &minVal, vDSP_Length(count))
                 vDSP_maxv(ptr, 1, &maxVal, vDSP_Length(count))
 
+                if !minVal.isFinite { minVal = 0 }
+                if !maxVal.isFinite { maxVal = 0 }
+                minVal = min(max(minVal, -1), 1)
+                maxVal = min(max(maxVal, -1), 1)
                 windows.append((minVal, maxVal))
                 start = end
             }

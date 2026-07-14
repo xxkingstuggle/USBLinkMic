@@ -48,15 +48,14 @@ enum AudioSampleFormat: UInt32, CaseIterable {
         return mono
     }
 
-    /// 将交错字节流转换为单声道 Float 样本，写入预分配的 buffer，并使用传入的工作区消除堆分配。
-    /// 调用方负责确保 mono 的 count == totalFrames。
+    /// 将交错字节流转换为单声道 Float 样本，写入可复用 buffer，并使用传入的工作区消除稳态堆分配。
     func interleavedBytesToMonoFloat(_ data: Data, channelCount: Int, into mono: inout [Float], workspace: inout [Float]) {
         guard channelCount > 0, data.count >= sampleSize * channelCount else { return }
         let totalFrames = data.count / (sampleSize * channelCount)
         guard totalFrames > 0 else { return }
 
-        // 确保 mono 和 workspace 足够大
-        if mono.count < totalFrames {
+        // mono 必须精确匹配本包帧数，避免较短包把上一个包尾部的旧样本带入波形。
+        if mono.count != totalFrames {
             mono = Array(repeating: 0, count: totalFrames)
         }
         if workspace.count < totalFrames {
@@ -109,6 +108,9 @@ enum AudioSampleFormat: UInt32, CaseIterable {
                         }
                         vDSP_vsmul(dst, 1, &invChan, dst, 1, n)
                     }
+                    // vDSP_vflt16 only converts the numeric type; it does not normalize PCM.
+                    var pcmScale = Float(1.0 / 32768.0)
+                    vDSP_vsmul(dst, 1, &pcmScale, dst, 1, n)
                 }
             case .i24:
                 // 24-bit 需逐字节解包，但使用本地变量减少开销。
@@ -136,6 +138,8 @@ enum AudioSampleFormat: UInt32, CaseIterable {
                         }
                         vDSP_vsmul(dst, 1, &invChan, dst, 1, n)
                     }
+                    var pcmScale = Float(1.0 / 2_147_483_648.0)
+                    vDSP_vsmul(dst, 1, &pcmScale, dst, 1, n)
                 }
             case .f32:
                 data.withUnsafeBytes { raw in
@@ -183,10 +187,12 @@ enum AudioSampleFormat: UInt32, CaseIterable {
         case .i16:
             data.withUnsafeBytes { raw in
                 guard let src = raw.bindMemory(to: Int16.self).baseAddress else { return }
+                var pcmScale = Float(1.0 / 32768.0)
                 for ch in 0..<channelCount {
                     channels[ch].withUnsafeMutableBufferPointer { buf in
                         guard let ptr = buf.baseAddress else { return }
                         vDSP_vflt16(src.advanced(by: ch), vDSP_Stride(channelCount), ptr, 1, n)
+                        vDSP_vsmul(ptr, 1, &pcmScale, ptr, 1, n)
                     }
                 }
             }
@@ -200,10 +206,12 @@ enum AudioSampleFormat: UInt32, CaseIterable {
         case .i32:
             data.withUnsafeBytes { raw in
                 guard let src = raw.bindMemory(to: Int32.self).baseAddress else { return }
+                var pcmScale = Float(1.0 / 2_147_483_648.0)
                 for ch in 0..<channelCount {
                     channels[ch].withUnsafeMutableBufferPointer { buf in
                         guard let ptr = buf.baseAddress else { return }
                         vDSP_vflt32(src.advanced(by: ch), vDSP_Stride(channelCount), ptr, 1, n)
+                        vDSP_vsmul(ptr, 1, &pcmScale, ptr, 1, n)
                     }
                 }
             }

@@ -1,7 +1,18 @@
 import SwiftUI
+import AppKit
+
+@MainActor
+private final class AppDelegate: NSObject, NSApplicationDelegate {
+    var onTerminate: (() -> Void)?
+
+    func applicationWillTerminate(_ notification: Notification) {
+        onTerminate?()
+    }
+}
 
 @main
 struct USBLinkMicNativeApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {
@@ -9,6 +20,9 @@ struct USBLinkMicNativeApp: App {
             MainView()
                 .environmentObject(model)
                 .frame(minWidth: 1080, minHeight: 680)
+                .onAppear {
+                    appDelegate.onTerminate = { model.stopRelayForTermination() }
+                }
                 .task {
                     await model.refresh()
                 }

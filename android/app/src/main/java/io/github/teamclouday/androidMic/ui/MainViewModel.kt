@@ -1,7 +1,6 @@
 package io.github.teamclouday.androidMic.ui
 
 import android.content.Context
-import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
@@ -25,12 +24,14 @@ import io.github.teamclouday.androidMic.ChannelCount
 import io.github.teamclouday.androidMic.DefaultStates
 import io.github.teamclouday.androidMic.Mode
 import io.github.teamclouday.androidMic.SampleRates
-import io.github.teamclouday.androidMic.network.LinkNetActivity
+import io.github.teamclouday.androidMic.network.LinkNetService
 import io.github.teamclouday.androidMic.domain.service.*
 import io.github.teamclouday.androidMic.utils.Either
 import io.github.teamclouday.androidMic.utils.ignore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -40,6 +41,8 @@ class MainViewModel : ViewModel() {
     var textLog by mutableStateOf("")
     var isStreamStarted by mutableStateOf(false)
     var isNetworkStarted by mutableStateOf(false)
+    var isNetworkConnecting by mutableStateOf(false)
+    var macToPhoneStatus by mutableStateOf("等待 Mac 端开启")
     var isMuted by mutableStateOf(false)
     var micWaveLevels by mutableStateOf(List(48) { 0f })
     var isPhoneToMacUsbActive by mutableStateOf(false)
@@ -113,38 +116,6 @@ class MainViewModel : ViewModel() {
     fun mute() { sendCommand(Command.Mute.ordinal) }
     fun unmute() { sendCommand(Command.Unmute.ordinal) }
 
-    fun startNetworkShare() {
-        if (isNetworkStarted) return
-        try {
-            val intent = Intent(AndroidMicApp.context, LinkNetActivity::class.java).apply {
-                action = LinkNetActivity.ACTION_LINK_NET_START
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                putExtra(LinkNetActivity.EXTRA_DNS_SERVERS, arrayOf("8.8.8.8"))
-                putExtra(LinkNetActivity.EXTRA_ROUTES, arrayOf("0.0.0.0/0"))
-            }
-            AndroidMicApp.context.startActivity(intent)
-            isNetworkStarted = true
-            addLogMessage("Mac 网络给手机：已打开 VPN 授权/启动请求")
-        } catch (e: Exception) {
-            isNetworkStarted = false
-            addLogMessage("Mac 网络给手机启动失败：${e.message}")
-        }
-    }
-
-    fun stopNetworkShare() {
-        try {
-            val intent = Intent(AndroidMicApp.context, LinkNetActivity::class.java).apply {
-                action = LinkNetActivity.ACTION_LINK_NET_STOP
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            AndroidMicApp.context.startActivity(intent)
-            isNetworkStarted = false
-            addLogMessage("Mac 网络给手机：已请求停止 VPN")
-        } catch (e: Exception) {
-            addLogMessage("Mac 网络给手机停止失败：${e.message}")
-        }
-    }
-
     private data class UsbStatus(val active: Boolean, val description: String)
     private var usbStatusJob: Job? = null
 
@@ -197,6 +168,27 @@ class MainViewModel : ViewModel() {
     }
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var macToPhoneStatusJob: Job? = null
+
+    private fun refreshMacToPhoneStatus() {
+        when (LinkNetService.getConnectionState()) {
+            LinkNetService.STATE_CONNECTED -> {
+                isNetworkStarted = true
+                isNetworkConnecting = false
+                macToPhoneStatus = "已通过 Mac relay 连接"
+            }
+            LinkNetService.STATE_CONNECTING -> {
+                isNetworkStarted = false
+                isNetworkConnecting = true
+                macToPhoneStatus = "正在等待 Mac relay…"
+            }
+            else -> {
+                isNetworkStarted = false
+                isNetworkConnecting = false
+                macToPhoneStatus = "等待 Mac 端开启"
+            }
+        }
+    }
 
     fun startNetworkMonitoring() {
         val cm = AndroidMicApp.context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -213,11 +205,20 @@ class MainViewModel : ViewModel() {
         }
         networkCallback = callback
         refreshPhoneToMacUsbStatus()
+        macToPhoneStatusJob?.cancel()
+        macToPhoneStatusJob = viewModelScope.launch {
+            while (isActive) {
+                refreshMacToPhoneStatus()
+                delay(500)
+            }
+        }
     }
 
     fun stopNetworkMonitoring() {
         networkCallback?.let { ignore { (AndroidMicApp.context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it) } }
         networkCallback = null
+        macToPhoneStatusJob?.cancel()
+        macToPhoneStatusJob = null
     }
 
     fun cleanLog() { textLog = "" }

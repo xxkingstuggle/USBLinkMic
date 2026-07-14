@@ -32,11 +32,14 @@ USB LinkMic 是一个 macOS + Android 工具，用一根 USB 线或局域网把 
 
 ### Mac 网络给手机
 
+- Mac App 内置并启动官方 gnirehtet v2.5.1 Rust relay，不再依赖用户另外安装 relay。
 - Mac 端建立 `adb reverse localabstract:usblinkmic_net tcp:31416`。
 - Android 端启动 VPN Service，把指定路由和 DNS 走到 Mac relay。
 - 默认 DNS 为 `8.8.8.8`，默认路由为 `0.0.0.0/0`，可在 Mac 设置里调整。
 
 首次启动需要 Android 端授权 VPN。
+
+gnirehtet 上游源代码、版本记录和 Apache-2.0 许可证位于 `third_party/gnirehtet/`。Mac App 中使用的 relay 可用 `scripts/build-gnirehtet-relay.sh` 从所附源码重新构建。
 
 ## 下载
 
@@ -91,6 +94,8 @@ Wi-Fi TCP 模式：
 macOS：
 
 ```sh
+./scripts/build-gnirehtet-relay.sh
+
 xcodebuild \
   -project mac-native/USBLinkMicNative.xcodeproj \
   -scheme USBLinkMicNative \
