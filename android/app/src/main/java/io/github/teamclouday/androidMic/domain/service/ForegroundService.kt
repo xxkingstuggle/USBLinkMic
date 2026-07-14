@@ -30,6 +30,9 @@ import io.github.teamclouday.androidMic.network.LinkNetService
 import io.github.teamclouday.androidMic.utils.ignore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.shareIn
@@ -37,6 +40,7 @@ import kotlinx.coroutines.launch
 
 
 data class ServiceStates(
+    @Volatile
     var isStreamStarted: Boolean = false,
     var isAudioStarted: Boolean = false,
     var isMuted: Boolean = false,
@@ -57,7 +61,9 @@ const val START_ALL_ACTION = "com.zjx.usblinkmic.START_ALL"
 const val STOP_ALL_ACTION = "com.zjx.usblinkmic.STOP_ALL"
 
 class ForegroundService : Service() {
-    private val scope = CoroutineScope(Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var delayedStopJob: Job? = null
+    private var waveformJob: Job? = null
 
     private inner class ServiceHandler(looper: Looper) : Handler(looper) {
         override fun handleMessage(msg: Message) {
@@ -105,6 +111,7 @@ class ForegroundService : Service() {
 
     private val states = ServiceStates()
 
+    @Volatile
     private var isBind = false
     private var uiMessenger: Messenger? = null
 
@@ -128,10 +135,14 @@ class ForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? {
         Log.d(TAG, "onBind")
         isBind = true
+        cancelDelayedStop()
         return serviceMessenger.binder
     }
 
-    private var serviceShouldStop = false
+    private fun cancelDelayedStop() {
+        delayedStopJob?.cancel()
+        delayedStopJob = null
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand: action=${intent?.action}")
@@ -173,7 +184,8 @@ class ForegroundService : Service() {
                 }
             }
             BIND_SERVICE_ACTION -> {
-                isBind = true; serviceShouldStop = false
+                isBind = true
+                cancelDelayedStop()
             }
             else -> {
                 Log.w(TAG, "unknown action: ${intent?.action}")
@@ -235,23 +247,34 @@ class ForegroundService : Service() {
         isBind = false
         uiMessenger = null
         if (!states.isStreamStarted) {
-            serviceShouldStop = true
-            scope.launch {
+            cancelDelayedStop()
+            delayedStopJob = scope.launch {
                 delay(3000L)
-                if (serviceShouldStop) stopService()
+                if (!isBind && !states.isStreamStarted) stopService()
             }
         }
         return true
     }
 
+    override fun onRebind(intent: Intent?) {
+        super.onRebind(intent)
+        Log.d(TAG, "onRebind")
+        isBind = true
+        cancelDelayedStop()
+    }
+
     override fun onDestroy() {
-        super.onDestroy()
         Log.d(TAG, "onDestroy")
         stopService()
+        scope.cancel()
+        super.onDestroy()
     }
 
     private fun stopService() {
         Log.d(TAG, "stopService")
+        cancelDelayedStop()
+        waveformJob?.cancel()
+        waveformJob = null
         managerAudio?.shutdown()
         managerAudio = null
         managerStream?.shutdown()
@@ -321,17 +344,22 @@ class ForegroundService : Service() {
         try {
             // Share the audio flow so both the streamer and the UI waveform collector can subscribe
             // without re-running the AudioRecord read loop or duplicating packet buffers.
-            val sharedFlow = managerAudio!!.audioStream().shareIn(scope, SharingStarted.Eagerly, replay = 0)
+            val audioManager = managerAudio!!
+            val sharedFlow = audioManager.audioStream().shareIn(
+                scope,
+                SharingStarted.WhileSubscribed(stopTimeoutMillis = 0),
+                replay = 0
+            )
 
             managerStream?.start(sharedFlow, serviceMessenger)
 
             // Throttle waveform updates to ~5 Hz to reduce Binder IPC and UI recompositions.
-            scope.launch {
+            waveformJob = scope.launch {
                 var packetCount = 0
                 sharedFlow.collect { packet ->
                     packetCount++
                     if (packetCount % 5 == 0) {
-                        val levels = managerAudio!!.buildWaveLevels(packet.buffer, packet.audioFormat, packet.channelCount)
+                        val levels = audioManager.buildWaveLevels(packet.buffer, packet.audioFormat, packet.channelCount)
                         if (levels.isNotEmpty()) {
                             replyUi(ResponseData(waveLevels = levels), replyTo)
                         }
@@ -378,6 +406,8 @@ class ForegroundService : Service() {
     }
 
     private fun shutdownStream() {
+        waveformJob?.cancel()
+        waveformJob = null
         val m = managerStream
         managerStream = null
         states.isStreamStarted = false
@@ -399,7 +429,7 @@ class ForegroundService : Service() {
         }
         managerAudio = null
         try {
-            managerAudio = MicAudioManager(applicationContext, scope, msg.sampleRate!!.value, msg.audioFormat!!.value, msg.channelCount!!.value, msg.audioSource!!)
+            managerAudio = MicAudioManager(applicationContext, msg.sampleRate!!.value, msg.audioFormat!!.value, msg.channelCount!!.value, msg.audioSource!!)
         } catch (e: Throwable) {
             Log.e(TAG, "startAudio init failed: ${e.javaClass.simpleName}: ${e.message}", e)
             replyUi(makeStatusResponse(msg = getString(R.string.error) + e.message, isConnected = false), replyTo)

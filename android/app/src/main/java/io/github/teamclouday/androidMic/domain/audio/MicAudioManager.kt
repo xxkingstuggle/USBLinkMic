@@ -8,7 +8,6 @@ import android.media.AudioRecord
 import android.util.Log
 import androidx.core.content.ContextCompat
 import io.github.teamclouday.androidMic.domain.service.AudioPacket
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -24,7 +23,6 @@ private const val TAG: String = "MicAM"
 // manage microphone recording
 class MicAudioManager(
     ctx: Context,
-    val scope: CoroutineScope,
     val sampleRate: Int,
     val audioFormat: Int,
     val channelCount: Int,
@@ -44,6 +42,7 @@ class MicAudioManager(
     private val bufferFloatConvert: ByteBuffer
     private var streamJob: Job? = null
 
+    @Volatile
     private var isMuted = false
 
     init {
@@ -99,8 +98,8 @@ class MicAudioManager(
 
     // audio stream publisher (no per-packet waveform computation; callers throttle UI updates themselves)
     fun audioStream(): Flow<AudioPacket> = channelFlow {
-        // launch in scope so infinite loop will be canceled when scope exits
-        streamJob = scope.launch {
+        // Tie the read loop to this flow collector so stopping all subscribers stops AudioRecord reads.
+        streamJob = launch {
             while (true) {
 
                 if (isMuted) {
@@ -175,16 +174,25 @@ class MicAudioManager(
 
     // stop recording
     fun stop() {
-        recorder.stop()
+        if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+            recorder.stop()
+        }
         Log.d(TAG, "stop")
     }
 
     // shutdown manager
     // should not call any methods after calling
     fun shutdown() {
-        recorder.stop()
-        recorder.release()
         streamJob?.cancel()
+        streamJob = null
+        try {
+            if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                recorder.stop()
+            }
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "shutdown: recorder stop failed", e)
+        }
+        recorder.release()
         Log.d(TAG, "shutdown")
     }
 
@@ -211,8 +219,10 @@ class MicAudioManager(
             val end = if (bucket == bucketCount - 1) frameCount else minOf(frameCount, start + framesPerBucket)
             var peak = 0f
             for (frame in start until end) {
-                val sample = kotlin.math.abs(readSample(data, format, channels, frame, 0))
-                if (sample > peak) peak = sample
+                for (channel in 0 until maxOf(1, channels)) {
+                    val sample = kotlin.math.abs(readSample(data, format, channels, frame, channel))
+                    if (sample > peak) peak = sample
+                }
             }
             levels[bucket] = peak.coerceIn(0f, 1f)
         }

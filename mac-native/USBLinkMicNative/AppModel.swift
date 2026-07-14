@@ -2,6 +2,7 @@ import Foundation
 import CoreAudio
 import Network
 import SwiftUI
+import os
 
 struct NetworkAdapter: Identifiable, Hashable {
     let name: String
@@ -106,11 +107,13 @@ final class AppModel: ObservableObject {
     nonisolated(unsafe) private var monoBuffer: [Float] = []
     /// 预分配的工作区缓冲区，供解码器格式转换复用，避免多声道模式下每包堆分配。
     nonisolated(unsafe) private var formatWorkspace: [Float] = []
+    nonisolated(unsafe) private var lastWaveformPacketTime: UInt64 = 0
+    nonisolated private let audioReconfigurationPending = OSAllocatedUnfairLock(initialState: false)
 
     let relayPort = 31416
     let relaySocket = "usblinkmic_net"
     let androidPackage = "com.zjx.usblinkmic"
-    let mainActivity = "io.github.teamclouday.androidMic.ui.MainActivity"
+    let mainActivity = "io.github.teamclouday.androidMic.ui.AdbControlActivity"
     let micService = "io.github.teamclouday.androidMic.domain.service.ForegroundService"
     let networkActivity = "io.github.teamclouday.androidMic.network.LinkNetActivity"
     private let micReceiver = MicReceiver()
@@ -209,10 +212,10 @@ final class AppModel: ObservableObject {
                 sampleRate: Double(micSampleRate),
                 channelCount: micChannelCount,
                 audioFormat: format,
+                gain: Float(micGain),
+                isMuted: micMuted,
                 outputDeviceID: deviceID
             )
-            audioPlayer.gain = Float(micGain)
-            audioPlayer.isMuted = micMuted
             appendLog("手机麦克风：Mac 音频播放器已启动，采样率 \(micSampleRate) Hz")
         } catch {
             micReceiver.stop()
@@ -312,8 +315,8 @@ final class AppModel: ObservableObject {
         if before.lowercased().contains("ncm") {
             await enablePhoneToMacNetworkService()
 
-        appendLog("手机网络给 Mac：强制安卓默认使用 CDC-NCM…")
-        _ = await adb(["-s", serial, "shell", "settings", "put", "global", "tether_force_usb_functions", "1"])
+            appendLog("手机网络给 Mac：强制安卓默认使用 CDC-NCM…")
+            _ = await adb(["-s", serial, "shell", "settings", "put", "global", "tether_force_usb_functions", "1"])
 
             await refreshNetworkWithRetry()
             if network.ip != "-" {
@@ -332,10 +335,6 @@ final class AppModel: ObservableObject {
 
         // 先把 Mac 侧的网络服务启用，等 USB 网卡上来后 DHCP 才能拿到地址。
         await enablePhoneToMacNetworkService()
-
-        appendLog("手机网络给 Mac：强制安卓默认使用 CDC-NCM…")
-        _ = await adb(["-s", serial, "shell", "settings", "put", "global", "tether_force_usb_functions", "1"])
-
 
         if await startUsbTetherFunction(serial: serial, function: "ncm", label: "CDC-NCM") {
             phoneToMacState = .running
@@ -397,6 +396,11 @@ final class AppModel: ObservableObject {
     }
 
     private func startUsbTetherFunction(serial: String, function: String, label: String) async -> Bool {
+        // 必须先设置 force 标志，再切换 USB function，否则 Android Tethering 框架
+        // 会在 NCM 模式下无法启动 IpServer。
+        appendLog("手机网络给 Mac：强制安卓默认使用 CDC-NCM…")
+        _ = await adb(["-s", serial, "shell", "settings", "put", "global", "tether_force_usb_functions", "1"])
+
         appendLog("手机网络给 Mac：请求切换到 \(label)…")
         let started = await setUsbFunctionExpectingDisconnect(serial: serial, function: function)
         if !started {
@@ -408,9 +412,6 @@ final class AppModel: ObservableObject {
         try? await Task.sleep(for: .seconds(5))
         await refreshMacNetworkHardware()
         await enablePhoneToMacNetworkService()
-
-        appendLog("手机网络给 Mac：强制安卓默认使用 CDC-NCM…")
-        _ = await adb(["-s", serial, "shell", "settings", "put", "global", "tether_force_usb_functions", "1"])
 
         await refreshNetworkWithRetry()
 
@@ -621,7 +622,8 @@ final class AppModel: ObservableObject {
 
     private func compact(_ text: String) -> String {
         let lines = text.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
-        return lines.prefix(3).joined(separator: " / ").isEmpty ? "无" : lines.prefix(3).joined(separator: " / ")
+        let joined = lines.prefix(3).joined(separator: " / ")
+        return joined.isEmpty ? "无" : joined
     }
 
     private func formatShellDetail(_ result: ShellResult) -> String {
@@ -642,9 +644,14 @@ final class AppModel: ObservableObject {
                 self?.appendLog("手机麦克风：\(message)")
             }
         case .packet(let packet):
-            let t0 = perfNow()
-            audioPlayer.write(packet: packet)
-            if let format = AudioSampleFormat(rawValue: packet.audioFormat) {
+            if !audioPlayer.write(packet: packet) {
+                scheduleAudioReconfiguration(for: packet)
+            }
+            let now = perfNow()
+            if now &- lastWaveformPacketTime >= 100_000_000,
+               let format = AudioSampleFormat(rawValue: packet.audioFormat) {
+                lastWaveformPacketTime = now
+                let t0 = perfNow()
                 format.interleavedBytesToMonoFloat(packet.buffer, channelCount: Int(packet.channelCount), into: &monoBuffer, workspace: &formatWorkspace)
                 let t1 = perfNow()
                 waveformData.append(samples: monoBuffer, sampleRate: Double(packet.sampleRate))
@@ -656,11 +663,53 @@ final class AppModel: ObservableObject {
         }
     }
 
+    nonisolated private func scheduleAudioReconfiguration(for packet: AudioPacketMessage) {
+        let shouldSchedule = audioReconfigurationPending.withLock { pending in
+            guard !pending else { return false }
+            pending = true
+            return true
+        }
+        guard shouldSchedule else { return }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.audioReconfigurationPending.withLock { $0 = false }
+            }
+            self.reconfigureAudioPlayer(for: packet)
+            self.audioPlayer.write(packet: packet)
+        }
+    }
+
+    private func reconfigureAudioPlayer(for packet: AudioPacketMessage) {
+        guard (8_000...384_000).contains(Int(packet.sampleRate)),
+              (1...2).contains(Int(packet.channelCount)),
+              let format = AudioSampleFormat(rawValue: packet.audioFormat) else {
+            appendLog("手机麦克风：忽略无效音频格式包")
+            return
+        }
+
+        let deviceID = audioDevice == "系统默认输出" ? nil : systemOutputDeviceID(named: audioDevice)
+        do {
+            try audioPlayer.start(
+                sampleRate: Double(packet.sampleRate),
+                channelCount: Int(packet.channelCount),
+                audioFormat: format,
+                gain: Float(micGain),
+                isMuted: micMuted,
+                outputDeviceID: deviceID
+            )
+            appendLog("手机麦克风：已切换到 \(packet.sampleRate) Hz / \(packet.channelCount) 声道 / \(format.rawValue)")
+        } catch {
+            appendLog("手机麦克风：切换音频格式失败：\(error.localizedDescription)")
+        }
+    }
+
     nonisolated private func scheduleWaveformUpdate() {
         guard !pendingWaveformUpdate else { return }
         pendingWaveformUpdate = true
-        // 降到 ~20 Hz，与 Rust 原项目的低刷新开销一致。
-        waveformQueue.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
+        // 10 Hz 足以绘制流畅波形，同时减少 SwiftUI 重组和 Canvas 重绘。
+        waveformQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
             guard let self else { return }
             let samples = self.waveformData.read()
             Task { @MainActor [weak self] in
@@ -714,10 +763,10 @@ final class AppModel: ObservableObject {
                 sampleRate: Double(micSampleRate),
                 channelCount: micChannelCount,
                 audioFormat: format,
+                gain: Float(micGain),
+                isMuted: micMuted,
                 outputDeviceID: deviceID
             )
-            audioPlayer.gain = Float(micGain)
-            audioPlayer.isMuted = micMuted
             appendLog("手机麦克风：Mac 音频输出已切换到 \(audioDevice)")
         } catch {
             appendLog("手机麦克风：Mac 音频输出切换失败：\(error.localizedDescription)")
@@ -1056,7 +1105,7 @@ final class MicReceiver: @unchecked Sendable {
                 let packet = try decodeAudioPacketMessage(data)
                 packetCount += 1
                 byteCount += data.count
-                if packetCount == 1 || packetCount % 50 == 0 {
+                if packetCount == 1 || packetCount % 500 == 0 {
                     onEvent(.status("收到真实音频包 \(packetCount) 个，\(byteCount / 1024) KB"))
                 }
                 onEvent(.packet(packet))

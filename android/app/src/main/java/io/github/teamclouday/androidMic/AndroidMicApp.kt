@@ -33,7 +33,11 @@ class AndroidMicApp : Application() {
         appModule = AppModuleImpl(this)
 
         scope.launch {
-            appModule.appPreferences().preload()
+            val preferences = appModule.appPreferences()
+            preferences.preload()
+            if (preferences.mode.get() !in listOf(Mode.ADB, Mode.WIFI)) {
+                preferences.mode.update(Mode.ADB)
+            }
         }
     }
 

@@ -2,7 +2,7 @@ import Foundation
 
 /// 与 Rust / Android 通信的音频包结构。
 /// proto 定义在 mac/src/proto/messages.proto 中的 AudioPacketMessage。
-struct AudioPacketMessage {
+struct AudioPacketMessage: Sendable {
     var buffer: Data = Data()
     var sampleRate: UInt32 = 0
     var channelCount: UInt32 = 0
@@ -43,6 +43,7 @@ func decodeAudioPacketMessage(_ data: Data) throws -> AudioPacketMessage {
         let tag = try decodeVarint()
         let fieldNumber = Int(tag >> 3)
         let wireType = tag & 0x07
+        guard fieldNumber > 0 else { throw AudioPacketError.invalidField }
 
         switch wireType {
         case 0: // varint
@@ -63,6 +64,12 @@ func decodeAudioPacketMessage(_ data: Data) throws -> AudioPacketMessage {
             default: break
             }
             i = end
+        case 1: // fixed64 (unknown fields are skipped for forward compatibility)
+            guard data.count - i >= 8 else { throw AudioPacketError.truncated }
+            i += 8
+        case 5: // fixed32
+            guard data.count - i >= 4 else { throw AudioPacketError.truncated }
+            i += 4
         default:
             throw AudioPacketError.invalidField
         }

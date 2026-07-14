@@ -8,9 +8,11 @@ final class AudioPerfTracer: @unchecked Sendable {
     private var lock = os_unfair_lock_s()
     private var records: [String: Record] = [:]
     private var reportCounter: Int = 0
+    private var flushScheduled = false
     private let reportInterval = 100  // 每 100 次采样输出一次
     private let maxLogFileSize: UInt64 = 512 * 1024  // 512 KB 上限
     private let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("usblinkmic_perf.log")
+    private let flushQueue = DispatchQueue(label: "USBLinkMic.AudioPerfTracer", qos: .utility)
 
     private struct Record {
         var totalNanos: UInt64 = 0
@@ -23,6 +25,7 @@ final class AudioPerfTracer: @unchecked Sendable {
 
     /// 记录一次计时样本。
     func record(_ name: String, nanos: UInt64, overrun: Bool = false) {
+        var shouldScheduleFlush = false
         os_unfair_lock_lock(&lock)
         var r = records[name] ?? Record()
         r.totalNanos += nanos
@@ -32,16 +35,29 @@ final class AudioPerfTracer: @unchecked Sendable {
         records[name] = r
 
         reportCounter += 1
-        if reportCounter >= reportInterval {
+        if reportCounter >= reportInterval && !flushScheduled {
             reportCounter = 0
-            flush()
+            flushScheduled = true
+            shouldScheduleFlush = true
         }
         os_unfair_lock_unlock(&lock)
+
+        if shouldScheduleFlush {
+            flushQueue.async { [weak self] in
+                self?.flush()
+            }
+        }
     }
 
     private func flush() {
-        guard !records.isEmpty else { return }
-        let sorted = records.sorted { $0.value.totalNanos > $1.value.totalNanos }
+        os_unfair_lock_lock(&lock)
+        let snapshot = records
+        records.removeAll(keepingCapacity: true)
+        flushScheduled = false
+        os_unfair_lock_unlock(&lock)
+
+        guard !snapshot.isEmpty else { return }
+        let sorted = snapshot.sorted { $0.value.totalNanos > $1.value.totalNanos }
         var lines: [String] = []
         for (name, r) in sorted {
             let avgUs = Double(r.totalNanos) / Double(max(r.count, 1)) / 1000.0
@@ -53,28 +69,28 @@ final class AudioPerfTracer: @unchecked Sendable {
         }
         let report = lines.joined(separator: "\n") + "\n---\n"
         if let data = report.data(using: .utf8) {
-            // 限制日志文件大小，防止长期运行无限制增长。
-            if let fh = try? FileHandle(forWritingTo: tempURL) {
-                let currentSize = try? fh.seekToEnd()
-                if let currentSize, currentSize > maxLogFileSize {
-                    // 截断：只保留后半部分
-                    let keepSize = maxLogFileSize / 2
-                    fh.closeFile()
-                    if let existing = try? Data(contentsOf: tempURL), existing.count > keepSize {
-                        let trimmed = existing.suffix(Int(keepSize))
-                        try? trimmed.write(to: tempURL)
-                    }
-                }
-                if let fh = try? FileHandle(forWritingTo: tempURL) {
-                    fh.seekToEndOfFile()
-                    fh.write(data)
-                    fh.closeFile()
-                }
-            } else {
-                try? report.write(to: tempURL, atomically: false, encoding: .utf8)
-            }
+            appendToLogFile(data)
         }
-        records.removeAll()
+    }
+
+    /// Runs only on flushQueue. File I/O never occurs while holding the realtime-path lock.
+    private func appendToLogFile(_ data: Data) {
+        if !FileManager.default.fileExists(atPath: tempURL.path) {
+            FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+        }
+        guard let file = try? FileHandle(forWritingTo: tempURL) else { return }
+        defer { try? file.close() }
+
+        do {
+            let currentSize = try file.seekToEnd()
+            if currentSize + UInt64(data.count) > maxLogFileSize {
+                try file.truncate(atOffset: 0)
+                try file.seek(toOffset: 0)
+            }
+            try file.write(contentsOf: data)
+        } catch {
+            os_log(.error, log: log, "Failed to write performance log: %{public}s", error.localizedDescription)
+        }
     }
 }
 

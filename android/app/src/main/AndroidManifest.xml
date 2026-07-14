@@ -28,6 +28,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <activity
+            android:name="io.github.teamclouday.androidMic.ui.AdbControlActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:permission="android.permission.DUMP"
+            android:theme="@style/Theme.Transparent">
             <intent-filter>
                 <action android:name="com.zjx.usblinkmic.START_MIC" />
                 <action android:name="com.zjx.usblinkmic.STOP_MIC" />
@@ -38,6 +47,7 @@
         <activity
             android:name="io.github.teamclouday.androidMic.network.LinkNetActivity"
             android:exported="true"
+            android:permission="android.permission.DUMP"
             android:theme="@style/Theme.Transparent">
             <intent-filter>
                 <action android:name="com.zjx.usblinkmic.START_NETWORK" />
@@ -47,15 +57,8 @@
 
         <service
             android:name="io.github.teamclouday.androidMic.domain.service.ForegroundService"
-            android:exported="true"
-            android:foregroundServiceType="microphone">
-            <intent-filter>
-                <action android:name="com.zjx.usblinkmic.START_MIC" />
-                <action android:name="com.zjx.usblinkmic.STOP_MIC" />
-                <action android:name="com.zjx.usblinkmic.START_ALL" />
-                <action android:name="com.zjx.usblinkmic.STOP_ALL" />
-            </intent-filter>
-        </service>
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <service
             android:name="io.github.teamclouday.androidMic.network.LinkNetService"

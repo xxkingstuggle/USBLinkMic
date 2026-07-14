@@ -1,6 +1,7 @@
 import Foundation
 import AudioToolbox
 import Accelerate
+import os
 
 /// 管理 Mac 端音频输出：直接创建 AudioUnit HAL Output 到指定设备，
 /// 输出格式跟随用户配置（i16/i32/f32/u8，i24 映射为 f32），音频数据以原始字节存入 ring buffer。
@@ -18,9 +19,10 @@ final class AudioPlayer: @unchecked Sendable {
     private var channelCount: Int = 1
     private var audioFormat: AudioSampleFormat = .i16
     private var frameBytes: Int = 2
+    private var configurationLock = os_unfair_lock_s()
 
-    var gain: Float = 1.0
-    var isMuted: Bool = false
+    private var gain: Float = 1.0
+    private var isMuted: Bool = false
 
     // 预分配的缓冲区，避免渲染线程实时堆分配。
     private var readBuffer: [UInt8] = []
@@ -34,14 +36,20 @@ final class AudioPlayer: @unchecked Sendable {
         sampleRate: Double,
         channelCount: Int,
         audioFormat: AudioSampleFormat,
+        gain: Float,
+        isMuted: Bool,
         outputDeviceID: AudioDeviceID?
     ) throws {
         stop()
+        os_unfair_lock_lock(&configurationLock)
+        defer { os_unfair_lock_unlock(&configurationLock) }
 
         self.sampleRate = sampleRate
         self.channelCount = max(1, channelCount)
         self.audioFormat = audioFormat
         self.frameBytes = audioFormat.sampleSize * self.channelCount
+        self.gain = gain
+        self.isMuted = isMuted
 
         let componentSubType: OSType = outputDeviceID == nil ? kAudioUnitSubType_DefaultOutput : kAudioUnitSubType_HALOutput
 
@@ -132,24 +140,37 @@ final class AudioPlayer: @unchecked Sendable {
             throw AudioPlayerError.engineStartFailed
         }
 
+        var maximumFrames = UInt32(8192)
+        var maximumFramesSize = UInt32(MemoryLayout<UInt32>.size)
+        let maximumFramesStatus = AudioUnitGetProperty(
+            unit,
+            kAudioUnitProperty_MaximumFramesPerSlice,
+            kAudioUnitScope_Global,
+            0,
+            &maximumFrames,
+            &maximumFramesSize
+        )
+        if maximumFramesStatus != noErr || maximumFrames == 0 {
+            maximumFrames = 8192
+        }
+
+        // Allocate every render workspace before starting the AudioUnit. The callback must never
+        // resize these buffers or observe a partially initialized player.
+        let maxFramesPerRender = Int(maximumFrames)
+        let capacity = Int(sampleRate) * frameBytes
+        self.ringBuffer = ByteRingBuffer(capacity: max(capacity, 4096))
+        self.readBuffer = Array(repeating: UInt8(0), count: maxFramesPerRender * self.frameBytes)
+        self.floatWorkspace = Array(repeating: Float(0), count: maxFramesPerRender * self.channelCount)
+        self.i32Workspace = Array(repeating: Int32(0), count: maxFramesPerRender * self.channelCount)
+
         let startStatus = AudioOutputUnitStart(unit)
         if startStatus != noErr {
+            self.ringBuffer = nil
             AudioUnitUninitialize(unit)
             AudioComponentInstanceDispose(unit)
             throw AudioPlayerError.engineStartFailed
         }
-
-        // ring buffer 容量按 1 秒计算（原始字节）。
-        let capacity = Int(sampleRate) * frameBytes
-        self.ringBuffer = ByteRingBuffer(capacity: max(capacity, 4096))
         self.audioUnit = unit
-
-        // 预分配常用缓冲区，避免渲染线程发生堆分配。
-        // MacOS 上常规音频帧大小通常是 512 到 4096 帧之间。
-        let maxFramesPerRender = 8192
-        self.readBuffer = Array(repeating: UInt8(0), count: maxFramesPerRender * self.frameBytes)
-        self.floatWorkspace = Array(repeating: Float(0), count: maxFramesPerRender * self.channelCount)
-        self.i32Workspace = Array(repeating: Int32(0), count: maxFramesPerRender * self.channelCount)
     }
 
     func stop() {
@@ -158,21 +179,29 @@ final class AudioPlayer: @unchecked Sendable {
             AudioUnitUninitialize(unit)
             AudioComponentInstanceDispose(unit)
         }
+        os_unfair_lock_lock(&configurationLock)
         audioUnit = nil
-        ringBuffer?.reset()
+        let oldRingBuffer = ringBuffer
+        ringBuffer = nil
+        os_unfair_lock_unlock(&configurationLock)
+        oldRingBuffer?.reset()
     }
 
     /// 写入音频包原始字节。可在任意线程调用。
-    func write(packet: AudioPacketMessage) {
-        sampleRate = Double(packet.sampleRate)
-        channelCount = max(1, Int(packet.channelCount))
-        if let format = AudioSampleFormat(rawValue: packet.audioFormat) {
-            audioFormat = format
-        }
-        frameBytes = audioFormat.sampleSize * channelCount
+    @discardableResult
+    func write(packet: AudioPacketMessage) -> Bool {
+        os_unfair_lock_lock(&configurationLock)
+        let formatMatches = packet.sampleRate == UInt32(sampleRate.rounded()) &&
+            packet.channelCount == UInt32(channelCount) &&
+            packet.audioFormat == audioFormat.rawValue
+        let targetRingBuffer = formatMatches ? ringBuffer : nil
+        os_unfair_lock_unlock(&configurationLock)
+        guard formatMatches else { return false }
+
         let t0 = perfNow()
-        _ = ringBuffer?.write(packet.buffer)
+        _ = targetRingBuffer?.write(packet.buffer)
         sharedPerfTracer.record("ringbuf.write", nanos: perfNow() - t0)
+        return true
     }
 
     fileprivate func render(
@@ -187,8 +216,14 @@ final class AudioPlayer: @unchecked Sendable {
 
         let frames = Int(frameCount)
         let neededBytes = frames * frameBytes
-        if readBuffer.count < neededBytes {
-            readBuffer = Array(repeating: UInt8(0), count: neededBytes)
+        guard readBuffer.count >= neededBytes else {
+            let byteCount = Int(abl.pointee.mBuffers.mDataByteSize)
+            buffer.initializeMemory(
+                as: UInt8.self,
+                repeating: audioFormat == .u8 ? 128 : 0,
+                count: byteCount
+            )
+            return noErr
         }
 
         let t0 = perfNow()

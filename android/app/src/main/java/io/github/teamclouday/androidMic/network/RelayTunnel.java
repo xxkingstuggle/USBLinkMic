@@ -100,8 +100,9 @@ public final class RelayTunnel implements Tunnel {
             }
             localSocket.close();
         } catch (IOException e) {
-            // what could we do?
-            throw new RuntimeException(e);
+            // Closing is best-effort and is frequently called while another thread is blocked on
+            // the socket. Do not turn a harmless shutdown race into a service crash.
+            Log.w(TAG, "Could not fully close relay tunnel", e);
         }
     }
 }

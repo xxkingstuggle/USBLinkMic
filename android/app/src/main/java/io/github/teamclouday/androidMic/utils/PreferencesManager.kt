@@ -2,7 +2,6 @@ package io.github.teamclouday.androidMic.utils
 
 import android.content.Context
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -18,7 +17,6 @@ import io.github.teamclouday.androidMic.utils.PreferencesManager.Companion.edito
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
 
 abstract class PreferencesManager(private val context: Context, name: String) {
     private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = name)
@@ -75,12 +73,9 @@ abstract class Preference<T>(
     fun getFlow() = flow
 
     suspend fun get() = flow.first()
-    fun getBlocking() = runBlocking { get() }
 
     @Composable
-    fun getAsState() = flow.collectAsStateWithLifecycle(initialValue = remember {
-        getBlocking()
-    })
+    fun getAsState() = flow.collectAsStateWithLifecycle(initialValue = default)
 
     suspend fun update(value: T) = dataStore.editor {
         this@Preference.value = value
@@ -152,5 +147,4 @@ class SetPreference(
 ) : BasePreference<Set<String>>(dataStore, default) {
     override val key = stringSetPreferencesKey(key)
 }
-
 

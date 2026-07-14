@@ -22,14 +22,17 @@ import io.github.teamclouday.androidMic.AndroidMicApp
 import io.github.teamclouday.androidMic.AudioFormat
 import io.github.teamclouday.androidMic.AudioSource
 import io.github.teamclouday.androidMic.ChannelCount
+import io.github.teamclouday.androidMic.DefaultStates
 import io.github.teamclouday.androidMic.Mode
 import io.github.teamclouday.androidMic.SampleRates
 import io.github.teamclouday.androidMic.network.LinkNetActivity
 import io.github.teamclouday.androidMic.domain.service.*
 import io.github.teamclouday.androidMic.utils.Either
 import io.github.teamclouday.androidMic.utils.ignore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 class MainViewModel : ViewModel() {
     val prefs get() = AndroidMicApp.appModule.appPreferences()
@@ -82,21 +85,23 @@ class MainViewModel : ViewModel() {
 
     fun connect(beforeConnect: () -> Unit) {
         beforeConnect()
-        val data = runBlocking {
-            CommandData.fromPref(prefs, Command.StartStream)
-        }
-        if (data is Either.Left) {
-            val currentService = service ?: AndroidMicApp.service
-            if (currentService == null) {
-                addLogMessage("麦克风服务还未连接，请稍等一秒再试")
-                isStreamStarted = false
-                return
+        viewModelScope.launch {
+            val data = withContext(Dispatchers.IO) {
+                CommandData.fromPref(prefs, Command.StartStream)
             }
-            service = currentService
-            addLogMessage("手机麦克风：正在连接 Mac 端口 ${data.value.port ?: "默认"}")
-            sendCommand(data.value.toCommandMsg())
-        } else {
-            addLogMessage("请先完成网络设置（IP/端口）")
+            if (data is Either.Left) {
+                val currentService = service ?: AndroidMicApp.service
+                if (currentService == null) {
+                    addLogMessage("麦克风服务还未连接，请稍等一秒再试")
+                    isStreamStarted = false
+                    return@launch
+                }
+                service = currentService
+                addLogMessage("手机麦克风：正在连接 Mac 端口 ${data.value.port ?: "默认"}")
+                sendCommand(data.value.toCommandMsg())
+            } else {
+                addLogMessage("请先完成网络设置（IP/端口）")
+            }
         }
     }
 
@@ -140,34 +145,55 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    private data class UsbStatus(val active: Boolean, val description: String)
+    private var usbStatusJob: Job? = null
+
     fun refreshPhoneToMacUsbStatus() {
-        try {
-            val interfaces = java.net.NetworkInterface.getNetworkInterfaces().toList()
-                .filter { iface ->
-                    val n = iface.name.lowercase()
-                    iface.isUp && (n.contains("ncm") || n.contains("rndis") || n.contains("usb"))
-                }
-            val usbFunction = try {
-                Runtime.getRuntime().exec(arrayOf("getprop", "sys.usb.config"))
-                    .inputStream.bufferedReader().readText().trim()
-            } catch (_: Exception) { "" }
-            val active = usbFunction.contains("ncm", true) ||
-                    usbFunction.contains("rndis", true) ||
-                    interfaces.isNotEmpty()
-            isPhoneToMacUsbActive = active
-            phoneToMacUsbStatus = when {
-                active && interfaces.isNotEmpty() -> {
-                    val info = interfaces.joinToString { iface ->
-                        val ip = iface.inetAddresses.toList()
-                            .filterIsInstance<java.net.Inet4Address>().firstOrNull()?.hostAddress ?: "—"
-                        "${iface.name} $ip"
+        usbStatusJob?.cancel()
+        usbStatusJob = viewModelScope.launch {
+            val status = withContext(Dispatchers.IO) {
+                try {
+                    val interfaces = java.net.NetworkInterface.getNetworkInterfaces().toList()
+                        .filter { iface ->
+                            val name = iface.name.lowercase()
+                            iface.isUp && (name.contains("ncm") || name.contains("rndis") || name.contains("usb"))
+                        }
+                    val usbFunction = try {
+                        val process = ProcessBuilder("getprop", "sys.usb.config")
+                            .redirectErrorStream(true)
+                            .start()
+                        try {
+                            process.inputStream.bufferedReader().use { it.readText().trim() }
+                        } finally {
+                            process.destroy()
+                        }
+                    } catch (_: Exception) {
+                        ""
                     }
-                    "已开启：$info"
+                    val active = usbFunction.contains("ncm", true) ||
+                            usbFunction.contains("rndis", true) ||
+                            interfaces.isNotEmpty()
+                    val description = when {
+                        active && interfaces.isNotEmpty() -> {
+                            val info = interfaces.joinToString { iface ->
+                                val ip = iface.inetAddresses.toList()
+                                    .filterIsInstance<java.net.Inet4Address>()
+                                    .firstOrNull()?.hostAddress ?: "—"
+                                "${iface.name} $ip"
+                            }
+                            "已开启：$info"
+                        }
+                        active -> "已开启：$usbFunction"
+                        else -> usbFunction.ifBlank { "未检测到 USB 有线供网" }
+                    }
+                    UsbStatus(active, description)
+                } catch (_: Exception) {
+                    UsbStatus(false, "未检测到 USB 有线供网")
                 }
-                active -> "已开启：$usbFunction"
-                else -> usbFunction.ifBlank { "未检测到 USB 有线供网" }
             }
-        } catch (_: Exception) {}
+            isPhoneToMacUsbActive = status.active
+            phoneToMacUsbStatus = status.description
+        }
     }
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -204,7 +230,12 @@ class MainViewModel : ViewModel() {
         prefs.mode.update(value)
     }
     fun updateIp(value: String) = viewModelScope.launch { prefs.ip.update(value.trim()) }
-    fun updatePort(value: String) = viewModelScope.launch { prefs.port.update(value.filter { it.isDigit() }.take(5)) }
+    fun updatePort(value: String) = viewModelScope.launch {
+        val sanitized = value.filter { it.isDigit() }.take(5)
+        val port = sanitized.toIntOrNull()
+        val validValue = if (sanitized.isEmpty() || (port != null && port in 1..65535)) sanitized else DefaultStates.PORT
+        prefs.port.update(validValue)
+    }
     fun updateSampleRate(value: SampleRates) = viewModelScope.launch { prefs.sampleRate.update(value) }
     fun updateChannelCount(value: ChannelCount) = viewModelScope.launch { prefs.channelCount.update(value) }
     fun updateAudioFormat(value: AudioFormat) = viewModelScope.launch { prefs.audioFormat.update(value) }
@@ -245,6 +276,8 @@ class MainViewModel : ViewModel() {
 
     override fun onCleared() {
         stopNetworkMonitoring()
+        usbStatusJob?.cancel()
+        usbStatusJob = null
         responseMessenger = null
         service = null
         super.onCleared()

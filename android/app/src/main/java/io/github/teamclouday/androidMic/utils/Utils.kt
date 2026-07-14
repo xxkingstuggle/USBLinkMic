@@ -1,7 +1,5 @@
 package io.github.teamclouday.androidMic.utils
 
-import java.net.InetSocketAddress
-
 // helper function to ignore some exceptions
 inline fun ignore(body: () -> Unit) {
     try {
@@ -13,31 +11,15 @@ inline fun ignore(body: () -> Unit) {
 
 
 fun checkIp(ip: String): Boolean {
-    return try {
-        InetSocketAddress(ip, 6000)
-        true
-    } catch (_: Exception) {
-        false
+    val parts = ip.trim().split('.')
+    return parts.size == 4 && parts.all { part ->
+        part.isNotEmpty() && part.all(Char::isDigit) && part.toIntOrNull() in 0..255
     }
 }
 
 fun checkPort(portStr: String): Boolean {
-
-    if (portStr.isEmpty()) {
-        return false
-    }
-
-    val port = try {
-        portStr.toInt()
-    } catch (_: NumberFormatException) {
-        return false
-    }
-    return try {
-        InetSocketAddress("127.0.0.1", port)
-        true
-    } catch (_: Exception) {
-        false
-    }
+    val port = portStr.toIntOrNull() ?: return false
+    return port in 1..65535
 }
 
 fun Int.toBigEndianU32(): ByteArray {
@@ -53,12 +35,8 @@ fun Int.toBigEndianU32(): ByteArray {
 
 fun ByteArray.chunked(size: Int): List<ByteArray> {
     if (size <= 0) throw IllegalArgumentException("Size must be greater than 0")
-    return (0 until size step size).map { start ->
-        copyOfRange(
-            start, (start + size).coerceAtMost(
-                size
-            )
-        )
+    return (indices step size).map { start ->
+        copyOfRange(start, (start + size).coerceAtMost(this.size))
     }
 }
 

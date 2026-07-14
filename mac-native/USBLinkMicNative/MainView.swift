@@ -257,7 +257,6 @@ private struct SettingsSheet: View {
                 }
                 Spacer()
                 Button("完成") {
-                    model.saveSettings()
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

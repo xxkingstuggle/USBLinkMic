@@ -11,9 +11,9 @@ import io.github.teamclouday.androidMic.domain.service.Command
 import io.github.teamclouday.androidMic.domain.service.CommandData
 import io.github.teamclouday.androidMic.utils.ignore
 import io.github.teamclouday.androidMic.utils.toBigEndianU32
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import java.io.IOException
@@ -28,6 +28,7 @@ class TcpStreamer(
     private var port: Int
 ) : Streamer {
 
+    @Volatile
     private var socket: Socket? = null
     private var streamJob: Job? = null
 
@@ -94,7 +95,8 @@ class TcpStreamer(
 
         streamJob = scope.launch {
             audioStream.collect { data ->
-                if (socket == null || socket?.isConnected != true) return@collect
+                val currentSocket = socket ?: return@collect
+                if (!currentSocket.isConnected || currentSocket.isClosed) return@collect
 
                 try {
                     val message = Messages.AudioPacketMessage.newBuilder()
@@ -111,14 +113,18 @@ class TcpStreamer(
                     val prefix = pack.size.toBigEndianU32()
                     prefix.copyInto(out, 0)
                     pack.copyInto(out, 4)
-                    socket!!.outputStream.write(out)
-                } catch (e: IOException) {
-                    Log.d(tag, "${e.message}")
-                    delay(5)
-                    disconnect()
-                    tx.send(CommandData(Command.StopStream).toCommandMsg())
+                    currentSocket.outputStream.write(out)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    Log.d(tag, "${e.message}")
+                    Log.w(tag, "stream failed; stopping", e)
+                    closeIfCurrent(currentSocket)
+                    try {
+                        tx.send(CommandData(Command.StopStream).toCommandMsg())
+                    } catch (sendError: Exception) {
+                        Log.w(tag, "failed to notify service about stream failure", sendError)
+                    }
+                    throw CancellationException("stream stopped after socket failure")
                 }
             }
         }
@@ -126,19 +132,30 @@ class TcpStreamer(
 
     // disconnect from server
     override fun disconnect(): Boolean {
-        if (socket == null) return false
-        try {
-            socket?.close()
-        } catch (e: IOException) {
-            Log.d(tag, "disconnect [close]: ${e.message}")
-            socket = null
-            return false
-        }
+        val currentSocket = socket
         socket = null
         streamJob?.cancel()
         streamJob = null
+        if (currentSocket == null) return false
+        try {
+            currentSocket.close()
+        } catch (e: IOException) {
+            Log.d(tag, "disconnect [close]: ${e.message}")
+            return false
+        }
         Log.d(tag, "disconnect: complete")
         return true
+    }
+
+    private fun closeIfCurrent(failedSocket: Socket) {
+        if (socket === failedSocket) {
+            socket = null
+        }
+        try {
+            failedSocket.close()
+        } catch (e: IOException) {
+            Log.d(tag, "stream failure close: ${e.message}")
+        }
     }
 
     // shutdown streamer
@@ -148,13 +165,14 @@ class TcpStreamer(
 
     // get connected server information
     override fun getInfo(): String {
-        if (socket == null) return ""
-        return "[Device Address]:${socket?.remoteSocketAddress}"
+        val currentSocket = socket ?: return ""
+        return "[Device Address]:${currentSocket.remoteSocketAddress}"
     }
 
     // return true if is connected for streaming
     override fun isAlive(): Boolean {
-        return (socket != null && socket?.isConnected == true)
+        val currentSocket = socket ?: return false
+        return currentSocket.isConnected && !currentSocket.isClosed
     }
 
 
