@@ -32,6 +32,15 @@ updates:
       - dependency-name: "*"
         update-types:
           - version-update:semver-major
+      # Core 1.19 and Lifecycle 2.11 require compileSdk 37 and AGP 9.1.
+      # Keep them pinned until the project performs that migration as one
+      # deliberate, device-tested change.
+      - dependency-name: "androidx.core:core-ktx"
+        versions:
+          - ">= 1.19.0"
+      - dependency-name: "androidx.lifecycle:*"
+        versions:
+          - ">= 2.11.0"
 
   - package-ecosystem: github-actions
     directory: /
