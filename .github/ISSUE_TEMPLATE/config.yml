@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Read the documentation
-    url: https://github.com/xxkingstuggle/USBLinkMic#readme
-    about: Check requirements, setup steps, and known compatibility limits first.
-  - name: Security vulnerability
-    url: https://github.com/xxkingstuggle/USBLinkMic/security/policy
-    about: Do not disclose security-sensitive reports in a public issue.

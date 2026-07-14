@@ -1,123 +1,97 @@
-<div align="center">
-  <img src="Assets/icon512.png" width="112" alt="USB LinkMic 图标">
-  <h1>USB LinkMic</h1>
-  <p><strong>一根数据线，让 Android 手机的麦克风与网络为 Mac 所用。</strong></p>
-  <p>把手机麦克风传到 macOS、把手机网络共享给 Mac，或把 Mac 网络反向共享给 Android。</p>
-  <p>
-    <strong>简体中文</strong>
-    ·
-    <a href="README.md">English</a>
-  </p>
-  <p>
-    <a href="https://github.com/xxkingstuggle/USBLinkMic/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/xxkingstuggle/USBLinkMic?display_name=tag&sort=semver"></a>
-    <a href="https://github.com/xxkingstuggle/USBLinkMic/actions/workflows/android-ci.yml"><img alt="Android CI" src="https://github.com/xxkingstuggle/USBLinkMic/actions/workflows/android-ci.yml/badge.svg"></a>
-    <img alt="macOS 26 及以上" src="https://img.shields.io/badge/macOS-26%2B-000000?logo=apple">
-    <img alt="Android 8 及以上" src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white">
-    <a href="LICENSE"><img alt="MIT 协议" src="https://img.shields.io/github/license/xxkingstuggle/USBLinkMic"></a>
-  </p>
-  <p>
-    <a href="https://github.com/xxkingstuggle/USBLinkMic/releases/latest"><strong>下载应用</strong></a>
-    ·
-    <a href="#快速开始"><strong>快速开始</strong></a>
-    ·
-    <a href="https://github.com/xxkingstuggle/USBLinkMic/issues"><strong>问题反馈</strong></a>
-  </p>
-</div>
+# USB LinkMic
 
 <p align="center">
-  <img src="Assets/pc_screenshot_main_dark.png" width="62%" alt="USB LinkMic macOS 应用">
-  &nbsp;
-  <img src="Assets/android_screenshot_main_dark.png" width="24%" alt="USB LinkMic Android 应用">
+  <a href="README.zh-CN.md"><b>中文</b></a>
+  &nbsp;|&nbsp;
+  <a href="README.en.md"><b>English</b></a>
 </p>
 
-## USB LinkMic 能做什么？
+USB LinkMic 是一个 macOS + Android 工具，用一根 USB 线或局域网把 Android 手机和 Mac 连接起来。它不是单纯的麦克风工具，而是包含三块能力：
 
-USB LinkMic 把三种设备互联能力整合进原生 macOS + Android 应用：
+- **手机麦克风给 Mac**：把 Android 手机麦克风音频传到 Mac，并从指定 Mac 输出设备播放。
+- **手机网络给 Mac**：通过 USB CDC-NCM/RNDIS，把手机网络共享给 Mac。
+- **Mac 网络给手机**：通过 ADB reverse + Android VPN，把 Mac 网络反向共享给手机。
 
-| 模式 | 用途 | 连接方式 |
-| --- | --- | --- |
-| **手机麦克风 → Mac** | 将 Android 麦克风播放到指定 Mac 输出设备，也可接入虚拟声卡 | USB/ADB 或 Wi-Fi TCP |
-| **手机网络 → Mac** | 让 macOS 使用手机的网络连接 | USB CDC-NCM |
-| **Mac 网络 → 手机** | 通过内置反向中继，让 Android 流量经过 Mac | USB/ADB + Android VPN |
+## 功能
 
-- SwiftUI 与 Jetpack Compose 原生界面
-- 无账号、无云服务、无广告、无统计 SDK
-- 可调采样率、声道、PCM 格式、音频源、增益、静音与 Mac 输出设备
-- 实时波形、连接状态与诊断日志
-- 内置并可复现构建的 [gnirehtet](third_party/gnirehtet/UPSTREAM.md) 中继源码
+### 手机麦克风给 Mac
 
-## 兼容性
+- ADB 模式：Mac 自动配置 `adb reverse` 并启动 Android 端麦克风服务。
+- Wi-Fi TCP 模式：手机和 Mac 在同一局域网，Android 手动连接 Mac 的 IP 和端口。
+- 支持采样率、声道、音频格式、音频源、静音和增益设置。
+- Mac 端支持选择输出设备，例如系统默认输出、内置扬声器、TYPE-C/USB 声卡、BlackHole 等虚拟声卡。
+- Mac 端显示实时波形和诊断日志。
 
-| 组件 | 要求 |
-| --- | --- |
-| Mac | macOS 26 或更高版本；当前内置 relay 为 Apple 芯片（`arm64`）版本 |
-| Android | Android 8.0（API 26）或更高版本 |
-| USB 功能 | Android 已开启开发者选项、USB 调试，并完成 ADB 授权 |
-| 手机网络 → Mac | 手机/ROM 允许 `svc usb setFunctions ncm`；不同厂商兼容性差异较大 |
-| Mac 网络 → 手机 | 首次使用时允许 Android VPN 权限 |
+### 手机网络给 Mac
 
-> [!IMPORTANT]
-> 当前 Android Release 仍是 debug 构建，macOS 应用尚未公证。安装前请阅读[最新发布说明](https://github.com/xxkingstuggle/USBLinkMic/releases/latest)。本仓库是唯一官方发布来源。
+- Mac 端通过 ADB 请求 Android 切换 USB function 到 `ncm`。
+- 自动启用 Mac 侧手机网络服务，并检测 IP、网关、默认路由和 USB function 状态。
+- 停止时会禁用 Mac 侧手机网络服务，并尽量恢复 Android 原来的 USB function。
 
-## 快速开始
+这个功能依赖手机 ROM 是否允许 `svc usb setFunctions ncm`，不同 Android 设备兼容性会不同。
 
-1. 从 [Releases](https://github.com/xxkingstuggle/USBLinkMic/releases/latest) 下载 macOS 和 Android 两端应用。
-2. 将 **USB LinkMic.app** 放入 `/Applications`，并安装 APK：
+### Mac 网络给手机
 
-   ```sh
-   adb install USBLinkMic-android-debug.apk
-   ```
+- Mac App 内置并启动官方 gnirehtet v2.5.1 Rust relay，不再依赖用户另外安装 relay。
+- Mac 端建立 `adb reverse localabstract:usblinkmic_net tcp:31416`。
+- Android 端启动 VPN Service，把指定路由和 DNS 走到 Mac relay。
+- 默认 DNS 为 `8.8.8.8`，默认路由为 `0.0.0.0/0`，可在 Mac 设置里调整。
 
-3. 在 Android 开启 USB 调试，连接手机并允许授权。
-4. 在两端打开 USB LinkMic，选择所需模式：
+首次启动需要 Android 端授权 VPN。
 
-<details>
-<summary><strong>手机麦克风 → Mac</strong></summary>
+gnirehtet 上游源代码、版本记录和 Apache-2.0 许可证位于 `third_party/gnirehtet/`。Mac App 中使用的 relay 可用 `scripts/build-gnirehtet-relay.sh` 从所附源码重新构建。
 
-1. 在 Mac 端选择 **ADB**（USB）或 **Wi-Fi TCP**（局域网）模式。
-2. 选择 Mac 音频输出设备。如果要把手机音频作为其他 Mac 应用的麦克风输入，可选择 BlackHole 等虚拟声卡。
-3. 先启动 Mac 接收端，再在 Android 开始推流。
+## 下载
 
-</details>
+见 GitHub Releases：
 
-<details>
-<summary><strong>手机网络 → Mac</strong></summary>
+- `USBLinkMic-macOS.zip`：macOS 应用，解压后把 `USB LinkMic.app` 放入 `/Applications`。
+- `USBLinkMic-android-debug.apk`：Android 测试 APK，可用 `adb install USBLinkMic-android-debug.apk` 安装。
 
-1. 保持手机已连接并解锁。
-2. 在 Mac 应用打开「手机网络给 Mac」。
-3. 等待 macOS 检测到 CDC-NCM 服务、IP 与网关。
+Android 包目前发布 debug 构建，正式签名包请使用自己的 keystore 本地构建。
 
-此模式依赖手机 ROM；如果无法切换 USB function，通常表示系统限制了 NCM 网络共享。
+## 使用
 
-</details>
+### 准备
 
-<details>
-<summary><strong>Mac 网络 → 手机</strong></summary>
+1. Android 手机打开开发者选项和 USB 调试。
+2. Mac 安装 Android platform-tools，并确保 `adb` 可用。
+3. 首次连接手机时，在手机上允许 USB 调试授权。
 
-1. 在 Mac 应用打开「Mac 网络给手机」。
-2. 在 Android 允许 VPN 权限。
-3. 如果默认配置不适合当前网络，可在 Mac 设置中调整 DNS 与路由。
+### 手机麦克风给 Mac
 
-</details>
+ADB 模式：
 
-## 工作原理
+1. USB 连接手机和 Mac。
+2. 打开 Mac 端 USB LinkMic。
+3. 在「手机麦克风」中选择 ADB 模式。
+4. 选择需要的音频输出设备。
+5. 打开开关。
 
-```mermaid
-flowchart LR
-    A["Android 麦克风"] -->|"ADB reverse 或 Wi-Fi TCP"| B["macOS USB LinkMic"]
-    B --> C["Core Audio 输出"]
-    D["Android 蜂窝网络 / Wi-Fi"] -->|"USB CDC-NCM"| E["macOS 网络服务"]
-    F["macOS 网络"] --> G["内置 gnirehtet relay"]
-    G -->|"ADB reverse"| H["Android VPN 服务"]
-```
+Wi-Fi TCP 模式：
 
-麦克风链路将 PCM 音频包发送到 Mac 并低开销播放。反向网络共享使用仓库中固定版本的 gnirehtet v2.5.1 Rust relay，可通过 `scripts/build-gnirehtet-relay.sh` 从附带源码重新构建。
+1. 手机和 Mac 连接同一局域网。
+2. Mac 端启动 Wi-Fi TCP 接收。
+3. 复制 Mac 端显示的 `IP:端口`。
+4. Android 端设置为 Wi-Fi TCP，填入该地址并启动。
 
-## 从源码构建
+### 手机网络给 Mac
 
-### macOS
+1. USB 连接手机和 Mac。
+2. 保持手机解锁，避免系统阻止 USB function 切换。
+3. 在 Mac 端打开「手机网络给 Mac」。
+4. 等待 Mac 检测到 CDC-NCM/RNDIS 网络服务、IP 和网关。
 
-需要 Xcode 26；重新构建内置 relay 时还需要 Rust。
+### Mac 网络给手机
+
+1. USB 连接手机和 Mac。
+2. 在 Mac 端打开「Mac 网络给手机」。
+3. Android 端弹出 VPN 授权时允许。
+4. 需要时在 Mac 设置里调整 DNS 和路由。
+
+## 构建
+
+macOS：
 
 ```sh
 ./scripts/build-gnirehtet-relay.sh
@@ -130,35 +104,25 @@ xcodebuild \
   clean build
 ```
 
-### Android
-
-需要 JDK 21 与 Android SDK。
+Android：
 
 ```sh
 cd android
+JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+ANDROID_HOME="$HOME/Library/Android/sdk" \
 ./gradlew :app:assembleDebug
 ```
 
-## 参与贡献与获取帮助
-
-- 提交 PR 前请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-- 可复现的问题请使用[错误报告](https://github.com/xxkingstuggle/USBLinkMic/issues/new?template=bug_report.yml)。
-- 新想法和使用场景请使用[功能建议](https://github.com/xxkingstuggle/USBLinkMic/issues/new?template=feature_request.yml)。
-- 安全漏洞请按照 [SECURITY.md](SECURITY.md) 私下报告。
-
-反馈 USB 网络问题时，请务必附上手机型号、Android 版本、ROM/厂商、macOS 版本、USB 模式与相关日志。这类问题往往与具体设备有关。
-
-## 项目结构
+## 目录
 
 ```text
 .
-├── android/          Android 客户端（Kotlin、Compose）
-├── mac-native/       macOS 客户端（Swift、SwiftUI、Core Audio）
-├── third_party/      固定版本的 gnirehtet 源码与许可证
-├── scripts/          可复现构建脚本
-└── Assets/           图标与截图
+├── android/          Android 客户端
+├── mac-native/       macOS 客户端
+├── Assets/           图标和素材
+└── outputs/          本地构建产物，不提交
 ```
 
-## 致谢与协议
+## 协议
 
-反向网络共享基于 [Genymobile/gnirehtet](https://github.com/Genymobile/gnirehtet)，其附带源码使用 Apache-2.0 协议。USB LinkMic 本身使用 [MIT License](LICENSE)。
+[MIT License](LICENSE)
