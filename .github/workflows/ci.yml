@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Test, lint, and build debug APK
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+
+      - name: Upload reports after failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-reports
+          path: |
+            android/app/build/reports/
+            android/app/build/outputs/lint-results-*.html
+          if-no-files-found: ignore
+          retention-days: 7
+
+  macos:
+    name: macOS
+    runs-on: macos-26
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build without signing
+        run: |
+          xcodebuild \
+            -project mac-native/USBLinkMicNative.xcodeproj \
+            -scheme USBLinkMicNative \
+            -configuration Debug \
+            -derivedDataPath "$RUNNER_TEMP/USBLinkMicDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+
+  relay:
+    name: gnirehtet relay
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Test pinned Rust relay
+        run: |
+          cargo test \
+            --manifest-path third_party/gnirehtet/relay-rust/Cargo.toml \
+            --locked

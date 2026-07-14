@@ -12,6 +12,10 @@ USB LinkMic is a macOS + Android toolkit for connecting an Android phone to a Ma
 - **Phone network to Mac**: share the phone network to the Mac over USB CDC-NCM/RNDIS.
 - **Mac network to phone**: share the Mac network back to Android through an ADB reverse relay and Android VPN service.
 
+<p align="center">
+  <img src="Assets/android-main-current.png" width="340" alt="USB LinkMic Android home screen">
+</p>
+
 ## Features
 
 ### Phone Microphone to Mac
@@ -41,6 +45,17 @@ The first start requires Android VPN authorization.
 
 The gnirehtet upstream source, pinned-version record, and Apache-2.0 license are in `third_party/gnirehtet/`. Rebuild the relay bundled with the Mac app from the included source by running `scripts/build-gnirehtet-relay.sh`.
 
+## Requirements and Compatibility
+
+| Item | Current requirement |
+| --- | --- |
+| Mac | Apple Silicon with macOS 26 or later |
+| Android | Android 8.0 / API 26 or later |
+| Tools | Android Platform Tools; `adb` available in the Mac shell |
+| Connection | A data-capable USB cable; the same LAN for Wi-Fi mode |
+
+Phone-to-Mac networking depends on whether the device ROM and USB controller allow switching to `ncm`/`rndis`; it is not available on every Android device. Mac-to-phone networking requires one-time Android VPN approval.
+
 ## Downloads
 
 See GitHub Releases:
@@ -49,6 +64,8 @@ See GitHub Releases:
 - `USBLinkMic-android-debug.apk`: test APK, install with `adb install USBLinkMic-android-debug.apk`.
 
 The Android artifact is currently a debug build. Build locally with your own keystore for production signing.
+
+The macOS artifact currently targets Apple Silicon and is not Developer ID notarized. Gatekeeper or a third-party firewall may prompt on first launch; continue only after verifying that the file came from this repository's Release page.
 
 ## Usage
 
@@ -101,6 +118,7 @@ xcodebuild \
   -scheme USBLinkMicNative \
   -configuration Release \
   -derivedDataPath mac-native/build/DerivedData \
+  CODE_SIGNING_ALLOWED=NO \
   clean build
 ```
 
@@ -120,8 +138,27 @@ ANDROID_HOME="$HOME/Library/Android/sdk" \
 ├── android/          Android client
 ├── mac-native/       macOS client
 ├── Assets/           Icons and assets
+├── docs/             Architecture and troubleshooting
+├── third_party/      Pinned third-party source and licenses
 └── outputs/          Local build artifacts, ignored by Git
 ```
+
+## Privacy and Security
+
+- No account is required, and the app does not include analytics or telemetry SDKs.
+- Audio and forwarded traffic stay between Android, the USB/LAN link, and the Mac; they are not uploaded to a project server.
+- The Android VPN only routes device traffic into the ADB relay. It is not an anonymity or end-to-end encryption service.
+- USB debugging is powerful. Authorize only trusted computers and sanitize serial numbers, usernames, IPs, and local paths before sharing logs.
+
+See the [security policy](SECURITY.md) and [third-party notices](THIRD_PARTY_NOTICES.md) for details.
+
+## Documentation and Contributing
+
+- [Architecture and data flows](docs/ARCHITECTURE.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Contributing guide](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+- [Release checklist](docs/RELEASING.md)
 
 ## License
 

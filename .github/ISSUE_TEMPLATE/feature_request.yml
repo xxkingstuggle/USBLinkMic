@@ -1,0 +1,51 @@
+name: Feature request
+description: 提议解决一个明确的用户问题 / Propose a product improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先描述用户问题，再描述方案。涉及新的权限、后台服务、网络路由或录音行为时，请说明隐私和失败恢复方式。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 用户问题
+      description: 谁在什么场景下遇到了什么阻碍？
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 期望结果
+      description: 用户最终应该能完成什么，而不只是“增加一个按钮”。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 涉及平台
+      multiple: true
+      options:
+        - Android
+        - macOS
+        - ADB/USB
+        - 音频协议
+        - 网络/VPN
+        - 文档/发布
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案与替代方案
+      description: 包含必要的前置条件、兼容性、清理/回退行为。
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 其他背景

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 故障排查 / Troubleshooting
+    url: https://github.com/xxkingstuggle/USBLinkMic/blob/main/docs/TROUBLESHOOTING.md
+    about: 提交 Issue 前先检查常见 ADB、权限、音频和 VPN 问题。
+  - name: 私下报告安全漏洞 / Report a vulnerability
+    url: https://github.com/xxkingstuggle/USBLinkMic/security/advisories/new
+    about: 不要在公开 Issue 中披露未修复漏洞。
