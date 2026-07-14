@@ -498,8 +498,7 @@ private struct MicPanel: View {
                 }
                 .buttonStyle(.plain)
             }
-            WaveformView(samples: model.waveSamples)
-                .frame(height: 122)
+            AudioStreamStatusView(active: model.hasRealAudioSamples)
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.hasRealAudioSamples ? "输出设备：\(model.audioDevice)" : "等待真实音频输入")
                 HStack(spacing: 6) {
@@ -656,55 +655,24 @@ private struct RouteNode: View {
     }
 }
 
-private struct WaveformView: View {
-    let samples: [(Float, Float)]
+private struct AudioStreamStatusView: View {
+    let active: Bool
 
     var body: some View {
-        Canvas { context, size in
-            let mid = size.height / 2
-            let maxHeight = size.height / 2
-
-            guard !samples.isEmpty else {
-                // 没有样本时画一条中线。
-                context.stroke(
-                    Path { $0.move(to: CGPoint(x: 0, y: mid)); $0.addLine(to: CGPoint(x: size.width, y: mid)) },
-                    with: .color(.secondary.opacity(0.45)),
-                    lineWidth: 2
-                )
-                return
-            }
-
-            context.stroke(
-                Path { $0.move(to: CGPoint(x: 0, y: mid)); $0.addLine(to: CGPoint(x: size.width, y: mid)) },
-                with: .color(.secondary.opacity(0.22)),
-                lineWidth: 1
-            )
-
-            let step = samples.count > 1 ? size.width / CGFloat(samples.count - 1) : 0
-            let verticalScale = maxHeight * 0.92
-            var path = Path()
-            for (index, (_, maxVal)) in samples.enumerated() {
-                let x = CGFloat(index) * step
-                let value = min(max(CGFloat(maxVal.isFinite ? maxVal : 0), -1), 1)
-                let point = CGPoint(x: x, y: mid - value * verticalScale)
-                if index == 0 {
-                    path.move(to: point)
-                } else {
-                    path.addLine(to: point)
-                }
-            }
-            for (index, (minVal, _)) in samples.enumerated().reversed() {
-                let x = CGFloat(index) * step
-                let value = min(max(CGFloat(minVal.isFinite ? minVal : 0), -1), 1)
-                let y = mid - value * verticalScale
-                path.addLine(to: CGPoint(x: x, y: y))
-            }
-            path.closeSubpath()
-            context.fill(path, with: .color(.cyan.opacity(0.85)))
+        HStack(spacing: 10) {
+            Image(systemName: active ? "waveform.circle.fill" : "waveform.circle")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(active ? Color.cyan : Color.secondary)
+            Text(active ? "音频流正在传输" : "等待真实音频输入")
+                .font(.subheadline.weight(.medium))
+            Spacer()
+            Circle()
+                .fill(active ? Color.green : Color.secondary.opacity(0.45))
+                .frame(width: 8, height: 8)
         }
-        .background(Color.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        // 离屏渲染合成，减少主线程绘制压力。
-        .drawingGroup(opaque: false, colorMode: .linear)
+        .padding(.horizontal, 14)
+        .frame(height: 54)
+        .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

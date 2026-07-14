@@ -93,21 +93,11 @@ final class AppModel: ObservableObject {
     @Published var dnsServers = "8.8.8.8"
     @Published var routes = "0.0.0.0/0"
     @Published var hasRealAudioSamples = false
-    @Published var waveSamples: [(Float, Float)] = []
     @Published var logs: [String] = []
     @Published var sidebarCollapsed = false
 
-    // 限制 UI 刷新频率，避免高频率音频包触发大量 SwiftUI 重组。
-    // 这些属性由接收队列 + 波形队列访问，用 nonisolated(unsafe) 避免 MainActor 调度开销。
-    nonisolated(unsafe) private var pendingWaveformUpdate = false
     private var pendingLogLines: [String] = []
     private var logFlushTask: Task<Void, Never>?
-    nonisolated private let waveformQueue = DispatchQueue(label: "USBLinkMic.WaveformUI")
-    /// 预分配的单声道浮点缓冲区，供音频包→波形转换复用，避免每包堆分配。
-    nonisolated(unsafe) private var monoBuffer: [Float] = []
-    /// 预分配的工作区缓冲区，供解码器格式转换复用，避免多声道模式下每包堆分配。
-    nonisolated(unsafe) private var formatWorkspace: [Float] = []
-    nonisolated(unsafe) private var lastWaveformPacketTime: UInt64 = 0
     nonisolated private let audioReconfigurationPending = OSAllocatedUnfairLock(initialState: false)
 
     let relayPort = 31416
@@ -119,7 +109,6 @@ final class AppModel: ObservableObject {
     private let micReceiver = MicReceiver()
     private let networkRelay = GnirehtetRelay()
     nonisolated private let audioPlayer = AudioPlayer()
-    nonisolated private let waveformData = WaveformData(capacity: 160)
     private let defaults = UserDefaults.standard
     private var previousUsbFunctionBeforeNcm: String?
     private var phoneToMacOperationInProgress = false
@@ -195,8 +184,6 @@ final class AppModel: ObservableObject {
     private func startMic() async {
         micState = .starting
         hasRealAudioSamples = false
-        waveSamples.removeAll()
-        waveformData.reset()
         appendLog("手机麦克风：开始启动 [\(micConnectionMode.label)]")
         do {
             try micReceiver.start(port: audioPort) { [weak self] event in
@@ -281,8 +268,6 @@ final class AppModel: ObservableObject {
     private func stopMic() async {
         micState = .stopping
         hasRealAudioSamples = false
-        waveSamples.removeAll()
-        waveformData.reset()
         appendLog("手机麦克风：开始停止")
         micReceiver.stop()
         audioPlayer.stop()
@@ -683,19 +668,6 @@ final class AppModel: ObservableObject {
             if !audioPlayer.write(packet: packet) {
                 scheduleAudioReconfiguration(for: packet)
             }
-            let now = perfNow()
-            if now &- lastWaveformPacketTime >= 100_000_000,
-               let format = AudioSampleFormat(rawValue: packet.audioFormat) {
-                lastWaveformPacketTime = now
-                let t0 = perfNow()
-                format.interleavedBytesToMonoFloat(packet.buffer, channelCount: Int(packet.channelCount), into: &monoBuffer, workspace: &formatWorkspace)
-                let t1 = perfNow()
-                waveformData.append(samples: monoBuffer, sampleRate: Double(packet.sampleRate))
-                let t2 = perfNow()
-                sharedPerfTracer.record("packet.bytesToMono", nanos: t1 - t0)
-                sharedPerfTracer.record("packet.waveform", nanos: t2 - t1)
-                scheduleWaveformUpdate()
-            }
         }
     }
 
@@ -738,20 +710,6 @@ final class AppModel: ObservableObject {
             appendLog("手机麦克风：已切换到 \(packet.sampleRate) Hz / \(packet.channelCount) 声道 / \(format.rawValue)")
         } catch {
             appendLog("手机麦克风：切换音频格式失败：\(error.localizedDescription)")
-        }
-    }
-
-    nonisolated private func scheduleWaveformUpdate() {
-        guard !pendingWaveformUpdate else { return }
-        pendingWaveformUpdate = true
-        // 10 Hz 足以绘制流畅波形，同时减少 SwiftUI 重组和 Canvas 重绘。
-        waveformQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
-            guard let self else { return }
-            let samples = self.waveformData.read()
-            Task { @MainActor [weak self] in
-                self?.waveSamples = samples
-                self?.pendingWaveformUpdate = false
-            }
         }
     }
 

@@ -198,9 +198,13 @@ final class AudioPlayer: @unchecked Sendable {
         os_unfair_lock_unlock(&configurationLock)
         guard formatMatches else { return false }
 
-        let t0 = perfNow()
-        _ = targetRingBuffer?.write(packet.buffer)
-        sharedPerfTracer.record("ringbuf.write", nanos: perfNow() - t0)
+        if sharedPerfTracer.isEnabled {
+            let startedAt = perfNow()
+            _ = targetRingBuffer?.write(packet.buffer)
+            sharedPerfTracer.record("ringbuf.write", nanos: perfNow() - startedAt)
+        } else {
+            _ = targetRingBuffer?.write(packet.buffer)
+        }
         return true
     }
 
@@ -226,29 +230,70 @@ final class AudioPlayer: @unchecked Sendable {
             return noErr
         }
 
-        let t0 = perfNow()
+        let tracing = sharedPerfTracer.isEnabled
+        let readStartedAt = tracing ? perfNow() : 0
         let readBytes = ringBuffer.read(into: &readBuffer, count: neededBytes, frameBytes: frameBytes)
-        let t1 = perfNow()
+        let decodeStartedAt = tracing ? perfNow() : 0
 
-        // 按格式解码字节到输出缓冲区。i24 以 f32 输出。
-        switch audioFormat {
-        case .u8:
-            decodeU8(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
-        case .i16:
-            decodeI16(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
-        case .i24:
-            decodeI24AsF32(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
-        case .i32:
-            decodeI32(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
-        case .f32:
-            decodeF32(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
+        if isMuted {
+            // Packed i24 input is rendered as f32, so its output buffer is larger than the bytes
+            // consumed from the ring buffer. Always clear the AudioUnit's actual output size.
+            fillSilence(buffer: buffer, byteCount: Int(abl.pointee.mBuffers.mDataByteSize))
+        } else if gain == 1, audioFormat != .i24 {
+            // The AudioUnit stream format already matches the incoming PCM. The common path needs
+            // no decoding, resampling or float round-trip; consume the ring buffer and copy bytes.
+            copyPCM(buffer: buffer, readBytes: readBytes, neededBytes: neededBytes)
+        } else {
+            // Gain processing requires conversion. i24 is the only format whose AudioUnit output
+            // representation differs from the incoming packed bytes, so it always uses this path.
+            switch audioFormat {
+            case .u8:
+                decodeU8(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
+            case .i16:
+                decodeI16(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
+            case .i24:
+                decodeI24AsF32(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
+            case .i32:
+                decodeI32(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
+            case .f32:
+                decodeF32(buffer: buffer, bytes: readBuffer, readBytes: readBytes, frames: frames)
+            }
         }
 
-        let t2 = perfNow()
-        sharedPerfTracer.record("render.ringbuf_read", nanos: t1 - t0)
-        sharedPerfTracer.record("render.decode", nanos: t2 - t1)
+        if tracing {
+            let finishedAt = perfNow()
+            sharedPerfTracer.record("render.ringbuf_read", nanos: decodeStartedAt - readStartedAt)
+            sharedPerfTracer.record("render.output", nanos: finishedAt - decodeStartedAt)
+        }
 
         return noErr
+    }
+
+    @inline(__always)
+    private func fillSilence(buffer: UnsafeMutableRawPointer, byteCount: Int) {
+        buffer.initializeMemory(
+            as: UInt8.self,
+            repeating: audioFormat == .u8 ? 128 : 0,
+            count: byteCount
+        )
+    }
+
+    @inline(__always)
+    private func copyPCM(buffer: UnsafeMutableRawPointer, readBytes: Int, neededBytes: Int) {
+        let copyCount = min(readBytes, neededBytes)
+        if copyCount > 0 {
+            readBuffer.withUnsafeBytes { source in
+                guard let sourceAddress = source.baseAddress else { return }
+                buffer.copyMemory(from: sourceAddress, byteCount: copyCount)
+            }
+        }
+        if copyCount < neededBytes {
+            buffer.advanced(by: copyCount).initializeMemory(
+                as: UInt8.self,
+                repeating: audioFormat == .u8 ? 128 : 0,
+                count: neededBytes - copyCount
+            )
+        }
     }
 
     // MARK: - 工作区管理
@@ -346,6 +391,9 @@ final class AudioPlayer: @unchecked Sendable {
                     vDSP_vfixu8(ws, 1, output, 1, n)
                 }
             }
+            if srcSamples < sampleCount {
+                output.advanced(by: srcSamples).initialize(repeating: 128, count: sampleCount - srcSamples)
+            }
         } else {
             // 多声道：逐声道处理，利用 stride。
             let framesPerChannel = srcSamples / channelCount
@@ -404,6 +452,7 @@ final class AudioPlayer: @unchecked Sendable {
                     vDSP_vfixr16(ws, 1, output, 1, n)
                 }
             }
+            zeroFill(output, from: srcSamples, count: sampleCount)
         } else {
             let framesPerChannel = srcSamples / channelCount
             output.initialize(repeating: 0, count: sampleCount)
@@ -527,6 +576,7 @@ final class AudioPlayer: @unchecked Sendable {
                     vDSP_vfixr32(ws, 1, output, 1, n)
                 }
             }
+            zeroFill(output, from: srcSamples, count: sampleCount)
         } else {
             let framesPerChannel = srcSamples / channelCount
             output.initialize(repeating: 0, count: sampleCount)

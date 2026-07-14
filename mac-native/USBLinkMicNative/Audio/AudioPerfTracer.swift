@@ -5,6 +5,9 @@ import os
 /// 极低开销性能追踪器，用于诊断音频热路径的 CPU 消耗。
 /// 使用 mach_absolute_time 避免系统调用开销，聚合后通过 os_log 输出到 Console.app。
 final class AudioPerfTracer: @unchecked Sendable {
+    /// Runtime tracing is opt-in because locks, os_log and file writes are not acceptable in the
+    /// normal realtime audio path. Enable only while profiling with USBLINKMIC_PERF_TRACE=1.
+    let isEnabled = ProcessInfo.processInfo.environment["USBLINKMIC_PERF_TRACE"] == "1"
     private var lock = os_unfair_lock_s()
     private var records: [String: Record] = [:]
     private var reportCounter: Int = 0
@@ -25,6 +28,7 @@ final class AudioPerfTracer: @unchecked Sendable {
 
     /// 记录一次计时样本。
     func record(_ name: String, nanos: UInt64, overrun: Bool = false) {
+        guard isEnabled else { return }
         var shouldScheduleFlush = false
         os_unfair_lock_lock(&lock)
         var r = records[name] ?? Record()
