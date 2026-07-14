@@ -109,9 +109,11 @@ dependencies {
 
 
     val composeBom = platform(libs.compose.bom)
+    val coroutinesBom = platform(libs.kotlinx.coroutines.bom)
 
     // Compose
     implementation(composeBom)
+    implementation(coroutinesBom)
     implementation(libs.compose.ui)
     implementation(libs.compose.material)
     implementation(libs.compose.material3)
@@ -130,6 +132,7 @@ dependencies {
 
     // integration test
     androidTestImplementation(composeBom)
+    androidTestImplementation(coroutinesBom)
     androidTestImplementation(libs.test.junit.ktx)
     androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.runner)
