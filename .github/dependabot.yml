@@ -55,6 +55,9 @@ updates:
       - dependency-name: "org.jetbrains.kotlinx:kotlinx-coroutines-test"
         versions:
           - ">= 1.11.0"
+      - dependency-name: "org.jetbrains.kotlinx:kotlinx-coroutines-bom"
+        versions:
+          - ">= 1.11.0"
 
   - package-ecosystem: github-actions
     directory: /
