@@ -10,9 +10,28 @@ updates:
       timezone: Asia/Shanghai
     open-pull-requests-limit: 5
     groups:
-      android-dependencies:
+      androidx:
         patterns:
-          - "*"
+          - "androidx.*"
+        update-types:
+          - minor
+          - patch
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin*"
+        update-types:
+          - minor
+          - patch
+      protobuf:
+        patterns:
+          - "com.google.protobuf*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /
